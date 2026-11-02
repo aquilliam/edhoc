@@ -5,8 +5,8 @@
 A Go implementation of EDHOC ([RFC 9528](https://www.rfc-editor.org/rfc/rfc9528)),
 the lightweight authenticated key exchange used to set up
 [OSCORE](https://www.rfc-editor.org/rfc/rfc8613) contexts on constrained devices.
-The package turns EDHOC messages into bytes and back; how they travel, over CoAP
-or anything else, is up to you.
+The package turns EDHOC messages into bytes and back; carrying them, over CoAP
+or anything else, is left to the application.
 
 ## Status
 
