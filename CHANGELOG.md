@@ -17,11 +17,18 @@ Breaking changes:
   the `*PeerError` to `NewInitiator(cfg, connID, peerErr.Suites...)`.
 - `Config.PeerCredential` now takes a `*PeerInfo` instead of an `IDCred`. It
   carries the ID_CRED field in `ID`, the EAD items of the same message, and
-  both connection identifiers. Replace `func(id edhoc.IDCred)` with
-  `func(p *edhoc.PeerInfo)` and use `p.ID`.
+  both connection identifiers. It also takes a `context.Context`: the one
+  passed to `ReadMessage2` or `ReadMessage3`, which now take it as their first
+  argument. Replace `func(id edhoc.IDCred)` with
+  `func(ctx context.Context, p *edhoc.PeerInfo)` and use `p.ID`.
+- `Error.Code`, `PeerError.Code` and the `ErrCode` constants have their own
+  type, `ErrCode`, instead of `int`.
 
 Other changes:
 
+- `Method`, `Suite` and `ErrCode` have `String` methods.
+- `ErrWrongState` is returned when a method is called out of order or after
+  the session has failed, and can be checked with `errors.Is`.
 - `IDCred` values can be compared with `==` and used as map keys.
 - `Session` is safe for concurrent use. `OSCORE` derives the secret and salt
   from the same PRK_out even while another goroutine calls `KeyUpdate`.
