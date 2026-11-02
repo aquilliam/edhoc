@@ -4,6 +4,13 @@ All notable changes to this project are listed here. Versions follow
 [semantic versioning](https://semver.org/). Until v1.0.0, minor versions may
 include breaking changes.
 
+## v0.2.1 (2026-11-02)
+
+- P-256 and P-384 public keys are decompressed with
+  `elliptic.UnmarshalCompressed` from the standard library instead of the
+  package's own code. Behavior is unchanged.
+- The README is shorter and lists what is supported.
+
 ## v0.2.0 (2026-11-02)
 
 This release changes the API so that one `Config` can serve every session on
