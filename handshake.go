@@ -87,7 +87,7 @@ func (h *handshake) lookupPeer(ctx context.Context, id IDCred, ead []EAD, ownCon
 		PeerConnID: bytes.Clone(peerConnID),
 	})
 	if errors.Is(err, ErrUnknownCredential) {
-		return nil, &Error{Code: ErrCodeUnknownCredential, msg: "looking up the peer credential", err: err}
+		return nil, &Error{Code: ErrCodeUnknownCredential, Info: "looking up the peer credential", err: err}
 	}
 	if err != nil {
 		return nil, wrapf(err, "looking up the peer credential")
@@ -207,6 +207,9 @@ func (h *handshake) encrypt0(seal bool, prk []byte, keyLabel, ivLabel int, th, i
 	aead, err := h.suite.AEAD(key)
 	if err != nil {
 		return nil, err
+	}
+	if seal && len(in) > h.suite.MaxPlaintextSize() {
+		return nil, failf("plaintext is too long for the EDHOC AEAD algorithm")
 	}
 	// Enc_structure = [ "Encrypt0", h'', TH ]
 	aad := cbor.AppendArray(nil, 3)

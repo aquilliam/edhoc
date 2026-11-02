@@ -908,3 +908,25 @@ func TestStrings(t *testing.T) {
 		t.Errorf("Session before the handshake: %v, want ErrWrongState", err)
 	}
 }
+
+func TestOversizedEAD(t *testing.T) {
+	i, r, _, _ := newPair(t)
+	msg1, _ := i.WriteMessage1()
+	r.ReadMessage1(t.Context(), msg1)
+	msg2, _ := r.WriteMessage2(pairCR)
+	i.ReadMessage2(t.Context(), msg2)
+	if _, err := i.WriteMessage3(EAD{Label: 5, Value: make([]byte, 1<<16)}); err == nil {
+		t.Fatal("WriteMessage3 accepted an EAD_3 too long for AES-CCM")
+	}
+}
+
+func TestApplicationError(t *testing.T) {
+	msg := ErrorMessage(&Error{Code: ErrCodeUnspecified, Info: "EAD item 5 rejected"})
+	var pe *PeerError
+	if err := parseErrorMessage(msg); !errors.As(err, &pe) || pe.Code != ErrCodeUnspecified || pe.Info != "EAD item 5 rejected" {
+		t.Fatalf("parsed %x as %v", msg, err)
+	}
+	if err := parseErrorMessage(ErrorMessage(&Error{Code: ErrCodeUnspecified, Info: "\xff"})); !errors.As(err, &pe) || pe.Info != "" {
+		t.Fatalf("invalid UTF-8 Info: %v", err)
+	}
+}

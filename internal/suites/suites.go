@@ -16,6 +16,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/aquilliam/edhoc/internal/ccm"
@@ -239,6 +240,15 @@ func (s *Suite) AEAD(key []byte) (cipher.AEAD, error) {
 		return nil, errors.New("suites: wrong AEAD key length")
 	}
 	return s.newAEAD(key)
+}
+
+// MaxPlaintextSize returns the longest plaintext the EDHOC AEAD algorithm
+// can encrypt. AES-CCM with a 13-byte nonce encodes the length in 2 bytes.
+func (s *Suite) MaxPlaintextSize() int {
+	if s.NonceSize == 13 {
+		return 1<<16 - 1
+	}
+	return math.MaxInt32
 }
 
 // AppNonceSize returns the nonce length of the application AEAD algorithm.

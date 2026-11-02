@@ -3,6 +3,8 @@ package edhoc
 import (
 	"errors"
 	"fmt"
+	"math"
+	"unicode/utf8"
 
 	"github.com/aquilliam/edhoc/internal/cbor"
 )
@@ -42,31 +44,37 @@ var ErrUnknownCredential = errors.New("edhoc: unknown credential")
 // An Error is a failure found while processing an EDHOC message. The session
 // is over; pass the error to ErrorMessage to get the error message to send to
 // the peer.
+//
+// An application that rejects a message for a reason of its own, such as an
+// EAD item it cannot process (RFC 9528, Section 3.8), can send
+// ErrorMessage(&Error{Code: ErrCodeUnspecified, Info: "..."}) and drop the
+// session.
 type Error struct {
 	// Code is the ERR_CODE to send.
 	Code ErrCode
+	// Info is the diagnostic text sent with ErrCodeUnspecified.
+	Info string
 	// Suites is SUITES_R, sent with ErrCodeWrongSelectedSuite.
 	Suites []Suite
 
-	msg string
 	err error
 }
 
 func (e *Error) Error() string {
 	if e.err != nil {
-		return "edhoc: " + e.msg + ": " + e.err.Error()
+		return "edhoc: " + e.Info + ": " + e.err.Error()
 	}
-	return "edhoc: " + e.msg
+	return "edhoc: " + e.Info
 }
 
 func (e *Error) Unwrap() error { return e.err }
 
 func failf(format string, args ...any) *Error {
-	return &Error{Code: ErrCodeUnspecified, msg: fmt.Sprintf(format, args...)}
+	return &Error{Code: ErrCodeUnspecified, Info: fmt.Sprintf(format, args...)}
 }
 
 func wrapf(err error, format string, args ...any) *Error {
-	return &Error{Code: ErrCodeUnspecified, msg: fmt.Sprintf(format, args...), err: err}
+	return &Error{Code: ErrCodeUnspecified, Info: fmt.Sprintf(format, args...), err: err}
 }
 
 // A PeerError is an EDHOC error message received from the peer.
@@ -106,7 +114,11 @@ func ErrorMessage(err error) []byte {
 	case ErrCodeUnknownCredential:
 		b = append(b, 0xf5)
 	default:
-		b = cbor.AppendText(b, e.msg)
+		info := e.Info
+		if !utf8.ValidString(info) {
+			info = ""
+		}
+		b = cbor.AppendText(b, info)
 	}
 	return b
 }
@@ -125,6 +137,9 @@ func parseErrorMessage(msg []byte) error {
 	d := cbor.NewDecoder(msg)
 	code, err := d.Int()
 	if err != nil {
+		return errors.New("edhoc: malformed error message")
+	}
+	if code < math.MinInt || code > math.MaxInt {
 		return errors.New("edhoc: malformed error message")
 	}
 	pe := &PeerError{Code: ErrCode(code)}

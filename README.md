@@ -71,7 +71,8 @@ oscore, err := session.OSCORE()
 
 ## Go versions
 
-The two most recent Go releases, the same ones the Go team supports.
+Go 1.25 or later, the version in `go.mod`. CI tests Go 1.25 and the two most
+recent releases.
 
 ## Security
 

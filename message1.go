@@ -82,11 +82,11 @@ func (r *Responder) readMessage1(ctx context.Context, msg []byte) (*Message1Info
 	})
 	if first < 0 {
 		return nil, &Error{Code: ErrCodeWrongSelectedSuite, Suites: slices.Clone(h.cfg.Suites),
-			msg: "no cipher suite in SUITES_I is supported"}
+			Info: "no cipher suite in SUITES_I is supported"}
 	}
 	if first != len(suitesI)-1 {
 		return nil, &Error{Code: ErrCodeWrongSelectedSuite, Suites: []Suite{suitesI[first]},
-			msg: "a cipher suite preferred over the selected one is supported"}
+			Info: "a cipher suite preferred over the selected one is supported"}
 	}
 	h.suite, _ = suiteByID(suitesI[first])
 	h.peerEph, err = h.suite.ParsePublicKey(gX)
@@ -104,13 +104,13 @@ func (r *Responder) readMessage1(ctx context.Context, msg []byte) (*Message1Info
 	if get != nil {
 		cfg, err := get(ctx, m)
 		if err != nil {
-			return nil, wrapf(err, "choosing the configuration")
+			return nil, wrapf(err, "no configuration for this message_1")
 		}
 		if cfg == nil {
 			return nil, failf("no configuration for this message_1")
 		}
 		if err := cfg.check(false); err != nil {
-			return nil, wrapf(err, "invalid configuration")
+			return nil, wrapf(err, "no configuration for this message_1")
 		}
 		if cfg.Method != m.Method {
 			return nil, failf("method %d is not supported", method)

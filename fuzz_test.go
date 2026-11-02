@@ -1,6 +1,7 @@
 package edhoc
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"testing"
 
@@ -20,11 +21,16 @@ func FuzzMessage1(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := r.ReadMessage1(t.Context(), msg); err != nil {
+		m, err := r.ReadMessage1(t.Context(), msg)
+		if err != nil {
 			ErrorMessage(err)
 			return
 		}
-		if _, err := r.WriteMessage2(fs.cR); err != nil {
+		cR := fs.cR
+		if bytes.Equal(m.PeerConnID, cR) {
+			cR = append(cR, 0)
+		}
+		if _, err := r.WriteMessage2(cR); err != nil {
 			t.Fatalf("WriteMessage2 after an accepted message_1: %v", err)
 		}
 	})

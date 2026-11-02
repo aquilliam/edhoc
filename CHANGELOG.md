@@ -56,6 +56,13 @@ Other changes:
   OSCORE Sender ID (RFC 8613, Section 3.3).
 - `Session.Exporter` returns an error for a negative length instead of
   panicking.
+- `WriteMessage3` and `WriteMessage4` return an error for a plaintext too long
+  for AES-CCM (65535 bytes) instead of panicking.
+- `Error.Info` is exported, so an application can send its own error
+  message, for example after rejecting an EAD item, with
+  `ErrorMessage(&edhoc.Error{Code: edhoc.ErrCodeUnspecified, Info: "..."})`.
+- A received ERR_CODE that does not fit in an `int` makes the error message
+  malformed instead of being truncated on 32-bit platforms.
 - Examples of a CoAP server, a retry after a wrong-suite error, and X.509
   certificates checked against a root.
 - `Method`, `Suite` and `ErrCode` have `String` methods.
