@@ -1,0 +1,161 @@
+package edhoc
+
+import (
+	"bytes"
+	"crypto/subtle"
+
+	"github.com/aquilliam/edhoc/internal/cbor"
+)
+
+// WriteMessage2 returns message_2 (RFC 9528, Section 5.3.2), carrying ead as
+// EAD_2.
+func (r *Responder) WriteMessage2(ead ...EAD) ([]byte, error) {
+	if r.state != responderReadMessage1 {
+		return nil, errState
+	}
+	msg, err := r.writeMessage2(ead)
+	if err != nil {
+		return nil, r.fail(err)
+	}
+	r.state = responderWroteMessage2
+	return msg, nil
+}
+
+func (r *Responder) writeMessage2(ead []EAD) ([]byte, error) {
+	h := &r.h
+	y, err := h.ephemeral()
+	if err != nil {
+		return nil, err
+	}
+	gY := h.suite.CompactPublicKey(y.PublicKey())
+	if err := h.derivePRK2e(gY); err != nil {
+		return nil, err
+	}
+	key, err := h.staticKey()
+	if err != nil {
+		return nil, err
+	}
+	gRX, err := key.ECDH(h.peerEph)
+	if err != nil {
+		return nil, wrapf(err, "computing G_RX")
+	}
+	if err := h.derivePRK3e2m(gRX); err != nil {
+		return nil, err
+	}
+
+	cred := &h.cfg.Credential
+	eadRaw := appendEAD(nil, ead)
+	mac2, err := h.mac2(cred.ID, cred.Raw, eadRaw)
+	if err != nil {
+		return nil, err
+	}
+	// PLAINTEXT_2 = ( C_R, ID_CRED_R / bstr / -24..23, Signature_or_MAC_2, ? EAD_2 )
+	pt := cbor.AppendID(nil, h.cR)
+	pt = cred.ID.appendCompact(pt)
+	pt = cbor.AppendBytes(pt, mac2)
+	pt = append(pt, eadRaw...)
+
+	keystream, err := kdf(h.suite, h.prk2e, labelKeystream2, h.th2, len(pt))
+	if err != nil {
+		return nil, wrapf(err, "PLAINTEXT_2 is too long")
+	}
+	// G_Y_CIPHERTEXT_2 = G_Y || (PLAINTEXT_2 XOR KEYSTREAM_2)
+	body := make([]byte, len(gY)+len(pt))
+	copy(body, gY)
+	subtle.XORBytes(body[len(gY):], pt, keystream)
+
+	h.th3 = thNext(h.suite, h.th2, pt, cred.Raw)
+	return cbor.AppendBytes(nil, body), nil
+}
+
+// ReadMessage2 processes message_2 (RFC 9528, Section 5.3.3). It calls
+// Config.PeerCredential to find the Responder's credential and checks the
+// Responder's proof of possession of the key in it. If the Responder sent an
+// error message instead, the error is a *PeerError.
+func (i *Initiator) ReadMessage2(msg []byte) error {
+	if i.state != initiatorWroteMessage1 {
+		return errState
+	}
+	if isErrorMessage(msg) {
+		return i.fail(parseErrorMessage(msg))
+	}
+	if err := i.readMessage2(msg); err != nil {
+		return i.fail(err)
+	}
+	i.state = initiatorReadMessage2
+	return nil
+}
+
+func (i *Initiator) readMessage2(msg []byte) error {
+	h := &i.h
+	body, err := readCiphertext(msg, "message_2")
+	if err != nil {
+		return err
+	}
+	n := h.suite.PublicKeySize()
+	if len(body) <= n {
+		return failf("malformed message_2: too short")
+	}
+	gY, ct := body[:n], body[n:]
+	h.peerEph, err = h.suite.ParsePublicKey(gY)
+	if err != nil {
+		return wrapf(err, "invalid G_Y")
+	}
+	if err := h.derivePRK2e(gY); err != nil {
+		return err
+	}
+	keystream, err := kdf(h.suite, h.prk2e, labelKeystream2, h.th2, len(ct))
+	if err != nil {
+		return wrapf(err, "CIPHERTEXT_2 is too long")
+	}
+	pt := make([]byte, len(ct))
+	subtle.XORBytes(pt, ct, keystream)
+
+	d := cbor.NewDecoder(pt)
+	cR, err := d.ID()
+	if err != nil {
+		return wrapf(err, "malformed PLAINTEXT_2: C_R")
+	}
+	idCredR, err := readIDCred(d)
+	if err != nil {
+		return wrapf(err, "malformed PLAINTEXT_2: ID_CRED_R")
+	}
+	mac2, err := d.Bytes()
+	if err != nil {
+		return wrapf(err, "malformed PLAINTEXT_2: Signature_or_MAC_2")
+	}
+	ead, eadRaw, err := readEAD(d)
+	if err != nil {
+		return wrapf(err, "malformed PLAINTEXT_2: EAD_2")
+	}
+	if bytes.Equal(cR, h.cI) {
+		return failf("C_R is the same as C_I")
+	}
+	h.cR = bytes.Clone(cR)
+
+	gR, err := i.h.lookupPeer(idCredR)
+	if err != nil {
+		return err
+	}
+	x, _ := h.ephemeral()
+	gRX, err := x.ECDH(gR)
+	if err != nil {
+		return wrapf(err, "computing G_RX")
+	}
+	if err := h.derivePRK3e2m(gRX); err != nil {
+		return err
+	}
+	want, err := h.mac2(idCredR, h.peer.Raw, eadRaw)
+	if err != nil {
+		return err
+	}
+	if !macEqual(mac2, want) {
+		return failf("message_2 MAC verification failed")
+	}
+	h.peerEAD, err = h.acceptEAD(ead)
+	if err != nil {
+		return err
+	}
+	h.th3 = thNext(h.suite, h.th2, pt, h.peer.Raw)
+	return nil
+}

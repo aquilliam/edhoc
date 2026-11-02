@@ -47,24 +47,27 @@ type Suite struct {
 	// EDHOC signature algorithm.
 	SigAlg int
 
-	// Application AEAD and hash algorithms, as COSE identifiers.
-	AppAEAD int
-	AppHash int
+	// Application AEAD and hash algorithms, as COSE identifiers, and the key
+	// length of the application AEAD algorithm.
+	AppAEAD    int
+	AppHash    int
+	AppKeySize int
 }
 
 var suite2 = &Suite{
-	ID:        2,
-	KeySize:   16,
-	NonceSize: 13,
-	TagSize:   8,
-	newAEAD:   newAESCCM(8),
-	Hash:      crypto.SHA256,
-	MACLength: 8,
-	Curve:     ecdh.P256(),
-	params:    p256,
-	SigAlg:    AlgES256,
-	AppAEAD:   AlgAESCCM16_64_128,
-	AppHash:   AlgSHA256,
+	ID:         2,
+	KeySize:    16,
+	NonceSize:  13,
+	TagSize:    8,
+	newAEAD:    newAESCCM(8),
+	Hash:       crypto.SHA256,
+	MACLength:  8,
+	Curve:      ecdh.P256(),
+	params:     p256,
+	SigAlg:     AlgES256,
+	AppAEAD:    AlgAESCCM16_64_128,
+	AppHash:    AlgSHA256,
+	AppKeySize: 16,
 }
 
 // ByID returns the cipher suite with the given label, or false if it is not
