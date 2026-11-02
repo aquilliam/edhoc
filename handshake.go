@@ -78,7 +78,7 @@ func (h *handshake) signer() crypto.Signer {
 func (h *handshake) lookupPeer(id IDCred, peerSigns bool) (crypto.PublicKey, error) {
 	cred, err := h.cfg.PeerCredential(id)
 	if errors.Is(err, ErrUnknownCredential) {
-		return nil, &Error{Code: ErrCodeUnknownCredential, msg: "unknown credential", err: err}
+		return nil, &Error{Code: ErrCodeUnknownCredential, msg: "looking up the peer credential", err: err}
 	}
 	if err != nil {
 		return nil, wrapf(err, "looking up the peer credential")
