@@ -11,8 +11,11 @@ a side.
 
 Breaking changes:
 
-- `Config.ConnID` is gone. Pass the connection identifier to
-  `NewInitiator(cfg, connID)` or `NewResponder(cfg, connID)` instead.
+- `Config.ConnID` is gone. The Initiator passes its connection identifier to
+  `NewInitiator(cfg, connID)`. The Responder passes its own to
+  `WriteMessage2(connID, ead...)`, once it knows C_I, and `NewResponder`
+  takes only the `Config`. `WriteMessage2` returns an error if the two are
+  equal, and can then be called again.
 - `Config.PeerSuites` is gone. After a wrong-suite error, pass the suites from
   the `*PeerError` to `NewInitiator(cfg, connID, peerErr.Suites...)`.
 - `Config.PeerCredential` now takes a `*PeerInfo` instead of an `IDCred`. It
@@ -23,9 +26,11 @@ Breaking changes:
   `func(ctx context.Context, p *edhoc.PeerInfo)` and use `p.ID`.
 - `Error.Code`, `PeerError.Code` and the `ErrCode` constants have their own
   type, `ErrCode`, instead of `int`.
-- `ReadMessage1`, `ReadMessage2`, `ReadMessage3` and `ReadMessage4` return the
-  EAD items of the message, and `PeerEAD` is gone. `ReadMessage1` now takes a
-  `context.Context` as its first argument, passed to `Config.GetConfig`.
+- `ReadMessage1` returns a `*Message1Info` with the method, the cipher
+  suites, EAD_1 and C_I. `ReadMessage2`, `ReadMessage3` and `ReadMessage4`
+  return the EAD items of the message, and `PeerEAD` is gone. `ReadMessage1`
+  now takes a `context.Context` as its first argument, passed to
+  `Config.GetConfig`.
 - `Initiator.PeerCredential` and `Responder.PeerCredential` are gone. Use
   `Session.PeerCredential`, or record the credential in
   `Config.PeerCredential`.
@@ -38,17 +43,21 @@ Breaking changes:
 
 Other changes:
 
-- `Config.GetConfig` lets a Responder choose its `Config` after reading
-  message_1, from the method, the suites, EAD_1 and the connection
-  identifiers. One Responder can then accept several methods, or use a
-  different credential per suite.
+- `Config.GetConfig` lets a Responder choose its `Config` once it has
+  accepted the cipher suite selected in message_1, from the method, the
+  suites, EAD_1 and C_I. One Responder can then accept several methods, or
+  use a different credential per suite. Cipher suite negotiation uses every
+  suite in the `Config` passed to `NewResponder`.
 - `CoAPMessage1`, `CoAPRequest` and `ParseCoAPRequest` build and split the
   payloads of CoAP requests to the EDHOC resource (RFC 9528, Appendix A.2).
 - `Session.Close` erases the session's keys. The Initiator and Responder erase
   the handshake keys once they are no longer needed.
+- `Session.OSCORE` fails if a connection identifier is too long to be an
+  OSCORE Sender ID (RFC 8613, Section 3.3).
+- `Session.Exporter` returns an error for a negative length instead of
+  panicking.
 - Examples of a CoAP server, a retry after a wrong-suite error, and X.509
   certificates checked against a root.
-
 - `Method`, `Suite` and `ErrCode` have `String` methods.
 - `ErrWrongState` is returned when a method is called out of order or after
   the session has failed, and can be checked with `errors.Is`.

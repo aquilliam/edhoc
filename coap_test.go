@@ -26,3 +26,22 @@ func TestCoAPRequest(t *testing.T) {
 		}
 	}
 }
+
+func FuzzParseCoAPRequest(f *testing.F) {
+	f.Add(CoAPMessage1([]byte{3, 2}))
+	f.Add(CoAPRequest([]byte{0x27}, []byte{0x41, 0}))
+	f.Add(CoAPRequest([]byte{1, 2, 3}, nil))
+	f.Fuzz(func(t *testing.T, payload []byte) {
+		cR, msg, message1, err := ParseCoAPRequest(payload)
+		if err != nil {
+			return
+		}
+		again := CoAPRequest(cR, msg)
+		if message1 {
+			again = CoAPMessage1(msg)
+		}
+		if !bytes.Equal(again, payload) {
+			t.Fatalf("%x became %x", payload, again)
+		}
+	})
+}

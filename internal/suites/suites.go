@@ -241,6 +241,14 @@ func (s *Suite) AEAD(key []byte) (cipher.AEAD, error) {
 	return s.newAEAD(key)
 }
 
+// AppNonceSize returns the nonce length of the application AEAD algorithm.
+func (s *Suite) AppNonceSize() int {
+	if s.AppAEAD == AlgAESCCM16_64_128 || s.AppAEAD == AlgAESCCM16_128_128 {
+		return 13
+	}
+	return 12
+}
+
 // HashLength returns the output length of the EDHOC hash algorithm.
 func (s *Suite) HashLength() int {
 	return s.Hash.Size()

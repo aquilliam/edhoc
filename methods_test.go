@@ -76,7 +76,7 @@ func TestTrace1(t *testing.T) {
 		Credential:     credR,
 		Key:            ed25519.NewKeyFromSeed(tr("SK_R (Raw Value)")),
 		PeerCredential: lookup(credI),
-	}, tr("C_R (Raw Value)"))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestTrace1(t *testing.T) {
 	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		t.Fatal(err)
 	}
-	msg2, err := r.WriteMessage2()
+	msg2, err := r.WriteMessage2(tr("C_R (Raw Value)"))
 	check(t, "message_2", msg2, err, tr("message_2 (CBOR Sequence)"))
 	if _, err := i.ReadMessage2(t.Context(), msg2); err != nil {
 		t.Fatal(err)
@@ -128,7 +128,7 @@ func TestTrace1(t *testing.T) {
 
 // party returns a key and credential for one side of a session with the
 // given method and suite.
-func party(t *testing.T, signs bool, suite Suite, kid byte) (any, Credential) {
+func party(t testing.TB, signs bool, suite Suite, kid byte) (any, Credential) {
 	t.Helper()
 	s, ok := suiteByID(suite)
 	if !ok {
@@ -186,7 +186,7 @@ func TestMethodsAndSuites(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					r, err := NewResponder(cfgR, pairCR)
+					r, err := NewResponder(cfgR)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -240,7 +240,7 @@ func TestWrongKeyType(t *testing.T) {
 	}
 	cfg = &Config{Method: MethodSignSign, Suites: []Suite{Suite2},
 		Credential: credR, Key: keyR, PeerCredential: lookup(credI)}
-	if _, err := NewResponder(cfg, pairCR); err == nil {
+	if _, err := NewResponder(cfg); err == nil {
 		t.Fatal("NewResponder accepted a DH key for signing")
 	}
 }
@@ -292,7 +292,7 @@ func testByValue(t *testing.T, suite Suite, m Method, credI Credential, keyI any
 		t.Fatal(err)
 	}
 	r, err := NewResponder(&Config{Method: m, Suites: []Suite{suite},
-		Credential: credR, Key: keyR, PeerCredential: peer}, pairCR)
+		Credential: credR, Key: keyR, PeerCredential: peer})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,5 @@
 package edhoc
 
-import "bytes"
-
 type responderState int
 
 const (
@@ -29,18 +27,17 @@ type Responder struct {
 	session *Session
 }
 
-// NewResponder returns a Responder for a new session. connID is C_R, this
-// side's connection identifier. The Initiator puts C_R in front of message_3
-// when EDHOC runs over CoAP, so a server uses it to find the Responder for a
-// message_3. It is also this side's OSCORE Recipient ID. Either way it must
-// differ from that of any other active session.
-func NewResponder(cfg *Config, connID []byte) (*Responder, error) {
+// NewResponder returns a Responder for a new session. Its connection
+// identifier is chosen later, in WriteMessage2.
+func NewResponder(cfg *Config) (*Responder, error) {
+	err := cfg.checkSuites()
 	if cfg.GetConfig == nil {
-		if err := cfg.check(false); err != nil {
-			return nil, err
-		}
+		err = cfg.check(false)
 	}
-	return &Responder{h: handshake{cfg: cfg, cR: bytes.Clone(connID)}}, nil
+	if err != nil {
+		return nil, err
+	}
+	return &Responder{h: handshake{cfg: cfg}}, nil
 }
 
 func (r *Responder) fail(err error) error {

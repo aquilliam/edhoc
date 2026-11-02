@@ -65,7 +65,7 @@ func Example() {
 		Credential:     credR,
 		Key:            keyR,
 		PeerCredential: lookUp,
-	}, []byte{0x27})
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func Example() {
 	if _, err := responder.ReadMessage1(context.Background(), msg1); err != nil {
 		log.Fatal(err)
 	}
-	msg2, err := responder.WriteMessage2()
+	msg2, err := responder.WriteMessage2([]byte{0x27}) // C_R for this session
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,6 +129,19 @@ func Example_server() {
 	pending := map[string]*edhoc.Responder{}
 	nextCR := byte(0)
 
+	// newConnID returns a C_R that differs from C_I and from the C_R of
+	// every pending session. Once a session is set up, its C_R is also its
+	// OSCORE Recipient ID and must stay unique among the OSCORE contexts.
+	newConnID := func(cI []byte) []byte {
+		for {
+			cR := []byte{nextCR}
+			nextCR++
+			if _, ok := pending[string(cR)]; !ok && !bytes.Equal(cR, cI) {
+				return cR
+			}
+		}
+	}
+
 	// handle serves a POST to /.well-known/edhoc and returns the response
 	// payload. When a Read method fails, the payload is the error message,
 	// sent with response code 4.00 or 5.00.
@@ -138,16 +151,16 @@ func Example_server() {
 			return nil, err
 		}
 		if message1 {
-			cR := []byte{nextCR}
-			nextCR++
-			r, err := edhoc.NewResponder(cfgR, cR)
+			r, err := edhoc.NewResponder(cfgR)
 			if err != nil {
 				return nil, err
 			}
-			if _, err := r.ReadMessage1(ctx, msg); err != nil {
+			m1, err := r.ReadMessage1(ctx, msg)
+			if err != nil {
 				return edhoc.ErrorMessage(err), err
 			}
-			msg2, err := r.WriteMessage2()
+			cR := newConnID(m1.PeerConnID)
+			msg2, err := r.WriteMessage2(cR)
 			if err != nil {
 				return nil, err
 			}
@@ -235,7 +248,7 @@ func ExampleNewInitiator_retry() {
 
 	i, _ := edhoc.NewInitiator(cfgI, []byte{0x37})
 	msg1, _ := i.WriteMessage1()
-	r, _ := edhoc.NewResponder(cfgR, []byte{0x27})
+	r, _ := edhoc.NewResponder(cfgR)
 	_, err := r.ReadMessage1(ctx, msg1)
 	reply := edhoc.ErrorMessage(err)
 
@@ -251,7 +264,7 @@ func ExampleNewInitiator_retry() {
 		log.Fatal(err)
 	}
 	msg1, _ = i.WriteMessage1()
-	r, _ = edhoc.NewResponder(cfgR, []byte{0x27})
+	r, _ = edhoc.NewResponder(cfgR)
 	_, err = r.ReadMessage1(ctx, msg1)
 	fmt.Println("second message_1 accepted:", err == nil)
 	// Output:
@@ -348,7 +361,7 @@ func ExampleNewX509() {
 		Credential:     credR,
 		Key:            keyR,
 		PeerCredential: verify,
-	}, []byte{0x27})
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -357,7 +370,7 @@ func ExampleNewX509() {
 	if _, err := r.ReadMessage1(ctx, msg1); err != nil {
 		log.Fatal(err)
 	}
-	msg2, _ := r.WriteMessage2()
+	msg2, _ := r.WriteMessage2([]byte{0x27})
 	if _, err := i.ReadMessage2(ctx, msg2); err != nil {
 		log.Fatal(err)
 	}

@@ -29,24 +29,24 @@ func (i *Initiator) WriteMessage1(ead ...EAD) ([]byte, error) {
 	return bytes.Clone(b), nil
 }
 
-// ReadMessage1 processes message_1 (RFC 9528, Section 5.2.3) and returns its
-// EAD items, without padding. If Config.GetConfig is set, it is called with
-// ctx. If the Initiator selected a cipher suite this side will not use, the
-// error is an *Error with code ErrCodeWrongSelectedSuite; send
-// ErrorMessage(err) back so the Initiator can try again.
-func (r *Responder) ReadMessage1(ctx context.Context, msg []byte) ([]EAD, error) {
+// ReadMessage1 processes message_1 (RFC 9528, Section 5.2.3) and returns
+// what it carries. If Config.GetConfig is set, it is called with ctx. If the
+// Initiator selected a cipher suite this side will not use, the error is an
+// *Error with code ErrCodeWrongSelectedSuite; send ErrorMessage(err) back so
+// the Initiator can try again.
+func (r *Responder) ReadMessage1(ctx context.Context, msg []byte) (*Message1Info, error) {
 	if r.state != responderStart {
 		return nil, ErrWrongState
 	}
-	ead, err := r.readMessage1(ctx, msg)
+	m, err := r.readMessage1(ctx, msg)
 	if err != nil {
 		return nil, r.fail(err)
 	}
 	r.state = responderReadMessage1
-	return ead, nil
+	return m, nil
 }
 
-func (r *Responder) readMessage1(ctx context.Context, msg []byte) ([]EAD, error) {
+func (r *Responder) readMessage1(ctx context.Context, msg []byte) (*Message1Info, error) {
 	h := &r.h
 	d := cbor.NewDecoder(msg)
 	method, err := d.Int()
@@ -69,34 +69,10 @@ func (r *Responder) readMessage1(ctx context.Context, msg []byte) ([]EAD, error)
 	if err != nil {
 		return nil, wrapf(err, "malformed message_1: EAD_1")
 	}
-	if bytes.Equal(cI, h.cR) {
-		return nil, failf("C_I is the same as C_R")
-	}
 
-	if get := h.cfg.GetConfig; get != nil {
-		if method < int64(MethodSignSign) || method > int64(MethodStaticStatic) {
-			return nil, failf("method %d is not supported", method)
-		}
-		cfg, err := get(ctx, &Message1Info{
-			Method:     Method(method),
-			Suites:     slices.Clone(suitesI),
-			EAD:        slices.DeleteFunc(slices.Clone(ead), func(e EAD) bool { return e.Label == 0 }),
-			ConnID:     bytes.Clone(h.cR),
-			PeerConnID: bytes.Clone(cI),
-		})
-		if err != nil {
-			return nil, wrapf(err, "choosing the configuration")
-		}
-		if cfg == nil {
-			return nil, failf("GetConfig returned no configuration")
-		}
-		if err := cfg.check(false); err != nil {
-			return nil, wrapf(err, "GetConfig returned an invalid configuration")
-		}
-		h.cfg = cfg
-	}
-
-	if Method(method) != h.cfg.Method {
+	get := h.cfg.GetConfig
+	if method < int64(MethodSignSign) || method > int64(MethodStaticStatic) ||
+		get == nil && Method(method) != h.cfg.Method {
 		return nil, failf("method %d is not supported", method)
 	}
 	// Accept only if the selected suite, the last one in SUITES_I, is the
@@ -117,11 +93,37 @@ func (r *Responder) readMessage1(ctx context.Context, msg []byte) ([]EAD, error)
 	if err != nil {
 		return nil, wrapf(err, "invalid G_X")
 	}
-	accepted, err := h.acceptEAD(ead)
-	if err != nil {
+
+	m := &Message1Info{
+		Method:     Method(method),
+		Suite:      suitesI[first],
+		Suites:     slices.Clone(suitesI),
+		EAD:        slices.DeleteFunc(slices.Clone(ead), func(e EAD) bool { return e.Label == 0 }),
+		PeerConnID: bytes.Clone(cI),
+	}
+	if get != nil {
+		cfg, err := get(ctx, m)
+		if err != nil {
+			return nil, wrapf(err, "choosing the configuration")
+		}
+		if cfg == nil {
+			return nil, failf("no configuration for this message_1")
+		}
+		if err := cfg.check(false); err != nil {
+			return nil, wrapf(err, "invalid configuration")
+		}
+		if cfg.Method != m.Method {
+			return nil, failf("method %d is not supported", method)
+		}
+		if !slices.Contains(cfg.Suites, m.Suite) {
+			return nil, failf("configuration does not include the selected cipher suite")
+		}
+		h.cfg = cfg
+	}
+	if m.EAD, err = h.acceptEAD(ead); err != nil {
 		return nil, err
 	}
 	h.cI = bytes.Clone(cI)
 	h.message1 = bytes.Clone(msg)
-	return accepted, nil
+	return m, nil
 }

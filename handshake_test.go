@@ -109,7 +109,7 @@ func TestTrace2(t *testing.T) {
 	// support. The trace gives no private key for that message_1's G_X, so it
 	// is fed to the Responder as is.
 	first := unhex(t, "03 06 5820 741a13d7ba048fbb615e94386aa3b61bea5b3d8f65f32620b749bee8d278efa9 0e")
-	r, err := NewResponder(ts.cfgR, ts.cR)
+	r, err := NewResponder(ts.cfgR)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestTrace2(t *testing.T) {
 	msg1, err := i.WriteMessage1()
 	check(t, "message_1", msg1, err, tr("message_1 (CBOR Sequence)"))
 
-	r, err = NewResponder(ts.cfgR, ts.cR)
+	r, err = NewResponder(ts.cfgR)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestTrace2(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.h.eph = ephemeralKey(t, tr("Y (Raw Value)"))
-	msg2, err := r.WriteMessage2()
+	msg2, err := r.WriteMessage2(ts.cR)
 	check(t, "message_2", msg2, err, tr("message_2 (CBOR Sequence)"))
 
 	if _, err := i.ReadMessage2(t.Context(), msg2); err != nil {
@@ -247,7 +247,7 @@ func newPair(t *testing.T) (*Initiator, *Responder, *Config, *Config) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewResponder(cfgR, pairCR)
+	r, err := NewResponder(cfgR)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func run(t *testing.T, i *Initiator, r *Responder, ead1, ead2, ead3, ead4 []EAD)
 	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		return err
 	}
-	msg2, err := r.WriteMessage2(ead2...)
+	msg2, err := r.WriteMessage2(pairCR, ead2...)
 	if err != nil {
 		return err
 	}
@@ -322,14 +322,15 @@ func TestEAD(t *testing.T) {
 	ead3 := []EAD{pad, {Label: -7, Value: []byte("three")}}
 	ead4 := []EAD{{Label: 8}}
 	msg1, _ := i.WriteMessage1(ead1...)
-	got, err := r.ReadMessage1(t.Context(), msg1)
+	m1, err := r.ReadMessage1(t.Context(), msg1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := m1.EAD
 	if len(got) != 2 || got[0].Label != 5 || string(got[0].Value) != "one" || got[1].Label != -7 || got[1].Value != nil {
 		t.Fatalf("EAD_1 = %+v", got)
 	}
-	msg2, _ := r.WriteMessage2(ead2...)
+	msg2, _ := r.WriteMessage2(pairCR, ead2...)
 	got, err = i.ReadMessage2(t.Context(), msg2)
 	if err != nil {
 		t.Fatal(err)
@@ -374,7 +375,7 @@ func TestUnknownCredential(t *testing.T) {
 	cfgI.PeerCredential = lookup()
 	msg1, _ := i.WriteMessage1()
 	r.ReadMessage1(t.Context(), msg1)
-	msg2, _ := r.WriteMessage2()
+	msg2, _ := r.WriteMessage2(pairCR)
 	_, err := i.ReadMessage2(t.Context(), msg2)
 	if !errors.Is(err, ErrUnknownCredential) {
 		t.Fatalf("ReadMessage2 error = %v, want ErrUnknownCredential", err)
@@ -390,14 +391,16 @@ func TestUnknownCredential(t *testing.T) {
 }
 
 func TestSameConnectionIDs(t *testing.T) {
-	i, _, _, cfgR := newPair(t)
-	r, err := NewResponder(cfgR, pairCI)
-	if err != nil {
+	i, r, _, _ := newPair(t)
+	msg1, _ := i.WriteMessage1()
+	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		t.Fatal(err)
 	}
-	msg1, _ := i.WriteMessage1()
-	if _, err := r.ReadMessage1(t.Context(), msg1); err == nil {
-		t.Fatal("Responder accepted C_I equal to C_R")
+	if _, err := r.WriteMessage2(pairCI); err == nil {
+		t.Fatal("WriteMessage2 accepted C_R equal to C_I")
+	}
+	if _, err := r.WriteMessage2(pairCR); err != nil {
+		t.Fatalf("WriteMessage2 after a rejected C_R: %v", err)
 	}
 }
 
@@ -406,7 +409,7 @@ func TestWrongState(t *testing.T) {
 	if _, err := i.WriteMessage3(); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("WriteMessage3 before message_1: %v", err)
 	}
-	if _, err := r.WriteMessage2(); !errors.Is(err, ErrWrongState) {
+	if _, err := r.WriteMessage2(pairCR); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("WriteMessage2 before message_1: %v", err)
 	}
 	if _, err := i.Session(); !errors.Is(err, ErrWrongState) {
@@ -448,7 +451,7 @@ func TestTamperedMessages(t *testing.T) {
 		if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 			t.Fatal(err)
 		}
-		msg2, _ := r.WriteMessage2()
+		msg2, _ := r.WriteMessage2(pairCR)
 		if !flip(msg2, 2) {
 			return nil, false
 		}
@@ -501,7 +504,7 @@ func TestInvalidMessage1(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, err := NewResponder(ts.cfgR, ts.cR)
+			r, err := NewResponder(ts.cfgR)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -612,7 +615,7 @@ func TestConfigChecks(t *testing.T) {
 		if _, err := NewInitiator(&c, pairCI); err == nil {
 			t.Errorf("%s: NewInitiator accepted the config", tt.name)
 		}
-		if _, err := NewResponder(&c, pairCR); err == nil {
+		if _, err := NewResponder(&c); err == nil {
 			t.Errorf("%s: NewResponder accepted the config", tt.name)
 		}
 	}
@@ -630,7 +633,7 @@ func TestConfigChecks(t *testing.T) {
 	if _, err := NewInitiator(&c, pairCI, Suite2); err != nil {
 		t.Errorf("NewInitiator with a key for the selected suite: %v", err)
 	}
-	if _, err := NewResponder(&c, pairCR); err == nil {
+	if _, err := NewResponder(&c); err == nil {
 		t.Error("NewResponder accepted a suite its key cannot be used with")
 	}
 }
@@ -648,7 +651,7 @@ func TestGetConfig(t *testing.T) {
 			Credential: credR2, Key: keyR2, PeerCredential: peers},
 	}
 	var got *Message1Info
-	cfgR := &Config{GetConfig: func(ctx context.Context, m *Message1Info) (*Config, error) {
+	cfgR := &Config{Suites: []Suite{Suite0, Suite2}, GetConfig: func(ctx context.Context, m *Message1Info) (*Config, error) {
 		got = m
 		c, ok := byMethod[m.Method]
 		if !ok {
@@ -667,16 +670,15 @@ func TestGetConfig(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := NewResponder(cfgR, pairCR)
+		r, err := NewResponder(cfgR)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if err := run(t, i, r, []EAD{{Label: 0}, {Label: 9}}, nil, nil, nil); err != nil {
 			t.Fatalf("%v: %v", cfgI.Method, err)
 		}
-		if got.Method != cfgI.Method || len(got.Suites) != 1 || got.Suites[0] != cfgI.Suites[0] ||
-			len(got.EAD) != 1 || got.EAD[0].Label != 9 ||
-			!bytes.Equal(got.ConnID, pairCR) || !bytes.Equal(got.PeerConnID, pairCI) {
+		if got.Method != cfgI.Method || got.Suite != cfgI.Suites[0] || len(got.Suites) != 1 ||
+			len(got.EAD) != 1 || got.EAD[0].Label != 9 || !bytes.Equal(got.PeerConnID, pairCI) {
 			t.Errorf("%v: Message1Info = %+v", cfgI.Method, got)
 		}
 	}
@@ -687,11 +689,34 @@ func TestGetConfig(t *testing.T) {
 	cfgI.Credential = credI2
 	cfgI.Suites = []Suite{Suite2}
 	i, _ := NewInitiator(&cfgI, pairCI)
-	r, _ := NewResponder(cfgR, pairCR)
+	r, _ := NewResponder(cfgR)
 	msg1, _ := i.WriteMessage1()
 	_, err := r.ReadMessage1(t.Context(), msg1)
 	if err == nil || ErrorMessage(err) == nil {
 		t.Fatalf("ReadMessage1 with a refused method: err = %v, want an error to send", err)
+	}
+
+	// Negotiation uses every suite in cfgR.Suites, so an Initiator that
+	// prefers suite 0 but selects suite 2 is told to use suite 0.
+	cfgI = *clients[1]
+	cfgI.Suites = []Suite{Suite0, Suite2}
+	i, _ = NewInitiator(&cfgI, pairCI, Suite2)
+	r, _ = NewResponder(cfgR)
+	msg1, _ = i.WriteMessage1()
+	got = nil
+	_, err = r.ReadMessage1(t.Context(), msg1)
+	var e *Error
+	if !errors.As(err, &e) || e.Code != ErrCodeWrongSelectedSuite || len(e.Suites) != 1 || e.Suites[0] != Suite0 || got != nil {
+		t.Fatalf("ReadMessage1 with a less preferred suite: err = %v, GetConfig called: %v", err, got != nil)
+	}
+
+	// A Config without the selected suite is refused.
+	byMethod[MethodSignSign] = byMethod[MethodStaticStatic]
+	i, _ = NewInitiator(clients[1], pairCI)
+	r, _ = NewResponder(cfgR)
+	msg1, _ = i.WriteMessage1()
+	if _, err := r.ReadMessage1(t.Context(), msg1); err == nil {
+		t.Fatal("ReadMessage1 accepted a Config with another method and suite")
 	}
 }
 
@@ -699,7 +724,7 @@ func TestKeysErased(t *testing.T) {
 	i, r, _, _ := newPair(t)
 	msg1, _ := i.WriteMessage1()
 	r.ReadMessage1(t.Context(), msg1)
-	msg2, _ := r.WriteMessage2()
+	msg2, _ := r.WriteMessage2(pairCR)
 	i.ReadMessage2(t.Context(), msg2)
 	msg3, _ := i.WriteMessage3()
 	if _, err := r.ReadMessage3(t.Context(), msg3); err != nil {
@@ -735,6 +760,42 @@ func TestSessionClose(t *testing.T) {
 	if err := s.KeyUpdate(nil); !errors.Is(err, ErrWrongState) {
 		t.Errorf("KeyUpdate after Close: %v", err)
 	}
+}
+
+func TestExporterAndOSCORELimits(t *testing.T) {
+	i, r, _, _ := newPair(t)
+	if err := run(t, i, r, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := i.Session()
+	if _, err := s.Exporter(0, nil, -1); err == nil {
+		t.Error("Exporter accepted a negative length")
+	}
+	if _, err := s.Exporter(0, nil, 255*32+1); err == nil {
+		t.Error("Exporter accepted a length above 255 hash lengths")
+	}
+	for _, tt := range []struct {
+		suite Suite
+		n     int
+	}{{Suite2, 7}, {Suite4, 6}, {Suite24, 6}} {
+		for _, n := range []int{tt.n, tt.n + 1} {
+			id := make([]byte, n)
+			s := &Session{suite: mustSuite(t, tt.suite), cI: id, cR: []byte{1}, prkOut: make([]byte, 32), prkExporter: make([]byte, 48)}
+			_, err := s.OSCORE()
+			if (err == nil) != (n == tt.n) {
+				t.Errorf("%v with a %d-byte C_I: err = %v", tt.suite, n, err)
+			}
+		}
+	}
+}
+
+func mustSuite(t *testing.T, id Suite) *suites.Suite {
+	t.Helper()
+	s, ok := suiteByID(id)
+	if !ok {
+		t.Fatalf("suite %d not supported", id)
+	}
+	return s
 }
 
 func TestPeerInfo(t *testing.T) {
@@ -816,7 +877,7 @@ func TestPeerCredentialContext(t *testing.T) {
 	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		t.Fatal(err)
 	}
-	msg2, _ := r.WriteMessage2()
+	msg2, _ := r.WriteMessage2(pairCR)
 	cancel()
 	_, err := i.ReadMessage2(ctx, msg2)
 	if !errors.Is(err, context.Canceled) {

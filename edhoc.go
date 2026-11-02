@@ -111,20 +111,22 @@ type PeerInfo struct {
 	ConnID, PeerConnID []byte
 }
 
-// Message1Info is what Config.GetConfig is told about a received message_1.
+// Message1Info describes a received message_1. Responder.ReadMessage1
+// returns it, and Config.GetConfig is passed it.
 type Message1Info struct {
 	// Method is the authentication method the Initiator chose.
 	Method Method
 
-	// Suites is SUITES_I. The last suite is the one the Initiator selected.
+	// Suite is the cipher suite the Initiator selected and the Responder
+	// accepted, and Suites is SUITES_I, which ends with Suite.
+	Suite  Suite
 	Suites []Suite
 
 	// EAD holds the EAD items in message_1, without padding.
 	EAD []EAD
 
-	// ConnID is this side's connection identifier, C_R, and PeerConnID the
-	// Initiator's, C_I.
-	ConnID, PeerConnID []byte
+	// PeerConnID is C_I, the Initiator's connection identifier.
+	PeerConnID []byte
 }
 
 // Config configures one side of EDHOC sessions. A Config may be shared by
@@ -136,7 +138,8 @@ type Config struct {
 	Method Method
 
 	// Suites lists the supported cipher suites. For the Initiator the order
-	// is its order of preference, most preferred first.
+	// is its order of preference, most preferred first. For a Responder with
+	// GetConfig, it lists every suite the Responder supports.
 	Suites []Suite
 
 	// Credential is this side's authentication credential, CRED_I or CRED_R.
@@ -168,11 +171,14 @@ type Config struct {
 	EADLabels []int
 
 	// GetConfig, if set, is called by a Responder during ReadMessage1, with
-	// the context passed to it, and returns the Config for the rest of the
-	// session. It lets one Responder accept several methods, or choose its
-	// credential by the selected suite or by EAD_1. When GetConfig is set,
-	// the Responder ignores the other fields of this Config, and the
-	// GetConfig field of the returned Config. An Initiator ignores it.
+	// the context passed to it, once the selected cipher suite has been
+	// accepted. It returns the Config for the rest of the session, which
+	// must have the method m.Method and include m.Suite. It lets one
+	// Responder accept several methods, or choose its credential by the
+	// selected suite or by EAD_1. When GetConfig is set, the Responder uses
+	// only Suites from this Config, for cipher suite negotiation, and ignores
+	// the GetConfig field of the returned Config. An Initiator ignores
+	// GetConfig.
 	GetConfig func(ctx context.Context, m *Message1Info) (*Config, error)
 }
 
@@ -186,16 +192,8 @@ func (c *Config) check(initiator bool) error {
 	if c.Method < MethodSignSign || c.Method > MethodStaticStatic {
 		return fmt.Errorf("edhoc: method %d is not supported", c.Method)
 	}
-	if len(c.Suites) == 0 {
-		return errors.New("edhoc: no cipher suites configured")
-	}
-	for i, s := range c.Suites {
-		if _, ok := suiteByID(s); !ok {
-			return fmt.Errorf("edhoc: cipher suite %d is not supported", s)
-		}
-		if slices.Contains(c.Suites[:i], s) {
-			return fmt.Errorf("edhoc: cipher suite %d is listed twice", s)
-		}
+	if err := c.checkSuites(); err != nil {
+		return err
 	}
 	if len(c.Credential.Raw) == 0 {
 		return errors.New("edhoc: Credential.Raw is empty")
@@ -226,6 +224,22 @@ func (c *Config) check(initiator bool) error {
 	}
 	if c.PeerCredential == nil {
 		return errors.New("edhoc: PeerCredential is not set")
+	}
+	return nil
+}
+
+// checkSuites validates Suites.
+func (c *Config) checkSuites() error {
+	if len(c.Suites) == 0 {
+		return errors.New("edhoc: no cipher suites configured")
+	}
+	for i, s := range c.Suites {
+		if _, ok := suiteByID(s); !ok {
+			return fmt.Errorf("edhoc: cipher suite %d is not supported", s)
+		}
+		if slices.Contains(c.Suites[:i], s) {
+			return fmt.Errorf("edhoc: cipher suite %d is listed twice", s)
+		}
 	}
 	return nil
 }

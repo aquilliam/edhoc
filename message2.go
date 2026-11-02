@@ -5,16 +5,26 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/subtle"
+	"errors"
 
 	"github.com/aquilliam/edhoc/internal/cbor"
 )
 
 // WriteMessage2 returns message_2 (RFC 9528, Section 5.3.2), carrying ead as
-// EAD_2.
-func (r *Responder) WriteMessage2(ead ...EAD) ([]byte, error) {
+// EAD_2. connID is C_R, this side's connection identifier. It must differ
+// from C_I, Message1Info.PeerConnID; if it does not, WriteMessage2 returns an
+// error and can be called again with another connID. It is also this side's
+// OSCORE Recipient ID, and over CoAP the Initiator puts it in front of
+// message_3 so that a server can find the Responder, so it must differ from
+// that of any other active session.
+func (r *Responder) WriteMessage2(connID []byte, ead ...EAD) ([]byte, error) {
 	if r.state != responderReadMessage1 {
 		return nil, ErrWrongState
 	}
+	if bytes.Equal(connID, r.h.cI) {
+		return nil, errors.New("edhoc: C_R must differ from C_I")
+	}
+	r.h.cR = bytes.Clone(connID)
 	msg, err := r.writeMessage2(ead)
 	if err != nil {
 		return nil, r.fail(err)

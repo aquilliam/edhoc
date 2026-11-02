@@ -3,6 +3,7 @@ package edhoc
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/aquilliam/edhoc/internal/suites"
@@ -60,6 +61,9 @@ func (s *Session) exporter(label int, context []byte, length int) ([]byte, error
 	if label < 0 {
 		return nil, errors.New("edhoc: exporter label must not be negative")
 	}
+	if length < 0 {
+		return nil, errors.New("edhoc: exporter length must not be negative")
+	}
 	return kdf(s.suite, s.prkExporter, label, context, length)
 }
 
@@ -104,10 +108,16 @@ type OSCOREParams struct {
 // OSCORE returns the OSCORE parameters for this session with the default
 // lengths from RFC 9528, Appendix A.1: a Master Secret as long as the
 // application AEAD key and an 8-byte Master Salt. Use Exporter with labels 0
-// and 1 if the application has agreed on other lengths.
+// and 1 if the application has agreed on other lengths. It fails if a
+// connection identifier is too long to be an OSCORE Sender ID: longer than
+// the application AEAD nonce minus 6 bytes (RFC 8613, Section 3.3), which is
+// 7 bytes for AES-CCM and 6 for the other algorithms.
 func (s *Session) OSCORE() (*OSCOREParams, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if n := s.suite.AppNonceSize() - 6; len(s.cI) > n || len(s.cR) > n {
+		return nil, fmt.Errorf("edhoc: a connection identifier is longer than %d bytes and cannot be an OSCORE ID", n)
+	}
 	secret, err := s.exporter(exporterOSCOREMasterSecret, nil, s.suite.AppKeySize)
 	if err != nil {
 		return nil, err

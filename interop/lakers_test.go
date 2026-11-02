@@ -173,14 +173,14 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 			t.Fatal(err)
 		}
 	} else {
-		r, err := edhoc.NewResponder(cfg, []byte{0x05})
+		r, err := edhoc.NewResponder(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err := r.ReadMessage1(t.Context(), p.recv()); err != nil {
 			t.Fatal(err)
 		}
-		msg2, err := r.WriteMessage2()
+		msg2, err := r.WriteMessage2([]byte{0x05})
 		if err != nil {
 			t.Fatal(err)
 		}

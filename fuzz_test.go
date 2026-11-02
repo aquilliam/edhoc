@@ -16,7 +16,7 @@ func FuzzMessage1(f *testing.F) {
 	f.Add(fs.msg1)
 	f.Add(unhex(f, "03 06 5820 741a13d7ba048fbb615e94386aa3b61bea5b3d8f65f32620b749bee8d278efa9 0e"))
 	f.Fuzz(func(t *testing.T, msg []byte) {
-		r, err := NewResponder(fs.cfgR, fs.cR)
+		r, err := NewResponder(fs.cfgR)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -24,7 +24,7 @@ func FuzzMessage1(f *testing.F) {
 			ErrorMessage(err)
 			return
 		}
-		if _, err := r.WriteMessage2(); err != nil {
+		if _, err := r.WriteMessage2(fs.cR); err != nil {
 			t.Fatalf("WriteMessage2 after an accepted message_1: %v", err)
 		}
 	})
@@ -77,7 +77,7 @@ func (fs *fuzzSetup) initiator(t *testing.T) *Initiator {
 
 // responder returns the trace 2 Responder after message_2.
 func (fs *fuzzSetup) responder(t *testing.T) *Responder {
-	r, err := NewResponder(fs.cfgR, fs.cR)
+	r, err := NewResponder(fs.cfgR)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func (fs *fuzzSetup) responder(t *testing.T) *Responder {
 		t.Fatal(err)
 	}
 	r.h.eph = ephemeralKey(t, fs.y)
-	if _, err := r.WriteMessage2(); err != nil {
+	if _, err := r.WriteMessage2(fs.cR); err != nil {
 		t.Fatal(err)
 	}
 	return r

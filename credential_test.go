@@ -115,3 +115,27 @@ func TestIDCredByValue(t *testing.T) {
 		}
 	}
 }
+
+func FuzzParseCCS(f *testing.F) {
+	for _, s := range []Suite{Suite0, Suite2, Suite24} {
+		for _, signs := range []bool{false, true} {
+			_, cred := party(f, signs, s, 0x07)
+			f.Add(cred.Raw)
+		}
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		cred, err := ParseCCS(data)
+		if err != nil {
+			return
+		}
+		kid, _ := cred.ID.KeyID()
+		again, err := NewCCS("", kid, cred.PublicKey)
+		if err != nil {
+			t.Fatalf("NewCCS with the key from %x: %v", data, err)
+		}
+		back, err := ParseCCS(again.Raw)
+		if err != nil || !samePublicKey(back.PublicKey, cred.PublicKey) {
+			t.Fatalf("key from %x did not survive a round trip: %v", data, err)
+		}
+	})
+}
