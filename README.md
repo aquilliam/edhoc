@@ -76,4 +76,6 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE).
+Copyright 2026 Last Lock Inc. Licensed under the Apache License, Version 2.0;
+see [LICENSE](LICENSE) and [NOTICE](NOTICE). You may use, modify and
+redistribute it, including in commercial and closed-source products.
