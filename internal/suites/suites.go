@@ -8,6 +8,7 @@ import (
 	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/asn1"
@@ -22,6 +23,7 @@ const (
 	AlgAESCCM16_64_128 = 10
 	AlgSHA256          = -16
 	AlgES256           = -7
+	AlgEdDSA           = -8
 )
 
 // A Suite is an EDHOC cipher suite.
@@ -40,7 +42,8 @@ type Suite struct {
 	// EDHOC MAC length in bytes, used with static DH authentication.
 	MACLength int
 
-	// EDHOC key exchange algorithm.
+	// EDHOC key exchange algorithm. params is nil for X25519, whose public
+	// keys are already in compact form.
 	Curve  ecdh.Curve
 	params *curve
 
@@ -52,6 +55,21 @@ type Suite struct {
 	AppAEAD    int
 	AppHash    int
 	AppKeySize int
+}
+
+var suite0 = &Suite{
+	ID:         0,
+	KeySize:    16,
+	NonceSize:  13,
+	TagSize:    8,
+	newAEAD:    newAESCCM(8),
+	Hash:       crypto.SHA256,
+	MACLength:  8,
+	Curve:      ecdh.X25519(),
+	SigAlg:     AlgEdDSA,
+	AppAEAD:    AlgAESCCM16_64_128,
+	AppHash:    AlgSHA256,
+	AppKeySize: 16,
 }
 
 var suite2 = &Suite{
@@ -73,7 +91,10 @@ var suite2 = &Suite{
 // ByID returns the cipher suite with the given label, or false if it is not
 // supported.
 func ByID(id int) (*Suite, bool) {
-	if id == 2 {
+	switch id {
+	case 0:
+		return suite0, true
+	case 2:
 		return suite2, true
 	}
 	return nil, false
@@ -104,6 +125,9 @@ func (s *Suite) HashLength() int {
 
 // PublicKeySize returns the length of a public key in compact representation.
 func (s *Suite) PublicKeySize() int {
+	if s.params == nil {
+		return 32
+	}
 	return s.params.size
 }
 
@@ -115,19 +139,56 @@ func (s *Suite) GenerateKey() (*ecdh.PrivateKey, error) {
 // CompactPublicKey returns the compact representation of a public key
 // (RFC 9528, Appendix B): the x-coordinate alone.
 func (s *Suite) CompactPublicKey(pub *ecdh.PublicKey) []byte {
+	if s.params == nil {
+		return pub.Bytes()
+	}
 	return pub.Bytes()[1 : 1+s.params.size]
 }
 
-// ParsePublicKey parses a public key in compact representation. It rejects an
-// x-coordinate that is not reduced modulo p or that is not on the curve.
+// ParsePublicKey parses a public key in compact representation. For P-256 it
+// rejects an x-coordinate that is not reduced modulo p or that is not on the
+// curve. An X25519 key of low order is caught later: ECDH with it fails.
 func (s *Suite) ParsePublicKey(x []byte) (*ecdh.PublicKey, error) {
+	if s.params == nil {
+		if len(x) != 32 {
+			return nil, errInvalidPoint
+		}
+		return s.Curve.NewPublicKey(x)
+	}
 	return s.params.decompress(s.Curve, x)
 }
 
-// Sign signs msg with key and returns the signature as COSE encodes it.
+// Sign signs msg with key using the EDHOC signature algorithm and returns the
+// signature as COSE encodes it.
 func (s *Suite) Sign(key crypto.Signer, msg []byte) ([]byte, error) {
-	if _, ok := key.Public().(*ecdsa.PublicKey); !ok {
-		return nil, errors.New("suites: ES256 needs an ECDSA key")
+	switch s.SigAlg {
+	case AlgEdDSA:
+		if _, ok := key.Public().(ed25519.PublicKey); !ok {
+			return nil, errors.New("suites: EdDSA needs an Ed25519 key")
+		}
+		return key.Sign(rand.Reader, msg, crypto.Hash(0))
+	case AlgES256:
+		return signES256(key, msg)
+	}
+	return nil, errors.New("suites: unsupported signature algorithm")
+}
+
+// Verify reports whether sig is a valid signature of msg by pub, which must be
+// an ed25519.PublicKey for EdDSA and an *ecdsa.PublicKey for ES256.
+func (s *Suite) Verify(pub crypto.PublicKey, msg, sig []byte) bool {
+	switch s.SigAlg {
+	case AlgEdDSA:
+		k, ok := pub.(ed25519.PublicKey)
+		return ok && len(k) == ed25519.PublicKeySize && ed25519.Verify(k, msg, sig)
+	case AlgES256:
+		return verifyES256(pub, msg, sig)
+	}
+	return false
+}
+
+func signES256(key crypto.Signer, msg []byte) ([]byte, error) {
+	if pub, ok := key.Public().(*ecdsa.PublicKey); !ok || pub.Curve.Params().Name != "P-256" {
+		return nil, errors.New("suites: ES256 needs a P-256 ECDSA key")
 	}
 	digest := sha256.Sum256(msg)
 	der, err := key.Sign(rand.Reader, digest[:], crypto.SHA256)
@@ -147,10 +208,9 @@ func (s *Suite) Sign(key crypto.Signer, msg []byte) ([]byte, error) {
 	return out, nil
 }
 
-// Verify reports whether sig is a valid signature of msg by pub.
-func (s *Suite) Verify(pub crypto.PublicKey, msg, sig []byte) bool {
+func verifyES256(pub crypto.PublicKey, msg, sig []byte) bool {
 	k, ok := pub.(*ecdsa.PublicKey)
-	if !ok || len(sig) != 64 {
+	if !ok || k.Curve.Params().Name != "P-256" || len(sig) != 64 {
 		return false
 	}
 	digest := sha256.Sum256(msg)

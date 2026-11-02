@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ecdh"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
@@ -55,8 +56,8 @@ func TestSuite2Parameters(t *testing.T) {
 		s.AppAEAD != 10 || s.AppHash != -16 {
 		t.Fatalf("suite 2 parameters do not match RFC 9528, Section 10.2: %+v", s)
 	}
-	if _, ok := ByID(6); ok {
-		t.Fatal("ByID(6) found a suite that is not implemented")
+	if _, ok := ByID(1); ok {
+		t.Fatal("ByID(1) found a suite that is not implemented")
 	}
 }
 
@@ -257,5 +258,85 @@ func TestWycheproofES256(t *testing.T) {
 	}
 	if ran != file.NumberOfTests {
 		t.Fatalf("ran %d tests, file has %d", ran, file.NumberOfTests)
+	}
+}
+
+func readTrace1(t *testing.T) func(string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("../../testdata/rfc9529_trace1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]string
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	return func(name string) []byte {
+		t.Helper()
+		v, ok := m[name]
+		if !ok {
+			t.Fatalf("no value %q in trace 1", name)
+		}
+		return unhex(t, v)
+	}
+}
+
+// Values from RFC 9529, Section 2 (method 0, cipher suite 0).
+func TestSuite0Trace1(t *testing.T) {
+	tr := readTrace1(t)
+	s, ok := ByID(0)
+	if !ok {
+		t.Fatal("suite 0 not found")
+	}
+	if s.PublicKeySize() != 32 || s.SigAlg != AlgEdDSA || s.MACLength != 8 {
+		t.Fatalf("suite 0 parameters do not match RFC 9528, Section 10.2: %+v", s)
+	}
+	x, err := s.Curve.NewPrivateKey(tr("X (Raw Value)"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.CompactPublicKey(x.PublicKey()); !bytes.Equal(got, tr("G_X (Raw Value)")) {
+		t.Fatalf("G_X = %x", got)
+	}
+	gY, err := s.ParsePublicKey(tr("G_Y (Raw Value)"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gXY, err := x.ECDH(gY)
+	if err != nil || !bytes.Equal(gXY, tr("G_XY (Raw Value)")) {
+		t.Fatalf("G_XY = %x, %v", gXY, err)
+	}
+
+	for _, side := range []struct{ sk, pk, msg, sig string }{
+		{"SK_R (Raw Value)", "PK_R (Raw Value)", "Message to be signed in message_2 (CBOR Data Item)", "Signature_or_MAC_2 (Raw Value)"},
+		{"SK_I (Raw Value)", "PK_I (Raw Value)", "Message to be signed in message_3 (CBOR Data Item)", "Signature_or_MAC_3 (Raw Value)"},
+	} {
+		key := ed25519.NewKeyFromSeed(tr(side.sk))
+		if !bytes.Equal(key.Public().(ed25519.PublicKey), tr(side.pk)) {
+			t.Fatalf("%s does not match %s", side.pk, side.sk)
+		}
+		sig, err := s.Sign(key, tr(side.msg))
+		if err != nil || !bytes.Equal(sig, tr(side.sig)) {
+			t.Fatalf("signature = %x, %v, want %x", sig, err, tr(side.sig))
+		}
+		if !s.Verify(ed25519.PublicKey(tr(side.pk)), tr(side.msg), sig) {
+			t.Fatal("Verify rejected the trace signature")
+		}
+		if s.Verify(ed25519.PublicKey(tr(side.pk)), append(tr(side.msg), 0), sig) {
+			t.Fatal("Verify accepted a signature over a different message")
+		}
+	}
+}
+
+// RFC 9529, Section 4.2.4: an X25519 point of low order.
+func TestX25519LowOrderPoint(t *testing.T) {
+	s, _ := ByID(0)
+	pub, err := s.ParsePublicKey(unhex(t, "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"))
+	if err != nil {
+		return
+	}
+	k, _ := s.GenerateKey()
+	if _, err := k.ECDH(pub); err == nil {
+		t.Fatal("ECDH with a low-order X25519 point succeeded")
 	}
 }
