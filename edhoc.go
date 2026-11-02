@@ -1,7 +1,11 @@
 package edhoc
 
 import (
+	"crypto"
 	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"errors"
 	"fmt"
 	"slices"
@@ -21,12 +25,18 @@ const (
 	MethodStaticStatic Method = 3 // both use static DH
 )
 
+func (m Method) initiatorSigns() bool { return m == MethodSignSign || m == MethodSignStatic }
+func (m Method) responderSigns() bool { return m == MethodSignSign || m == MethodStaticSign }
+
 // A Suite is an EDHOC cipher suite (RFC 9528, Section 3.6).
 type Suite int
 
-// Suite2 is AES-CCM-16-64-128, SHA-256, 8-byte MAC, P-256, ES256, with
-// AES-CCM-16-64-128 and SHA-256 as the application algorithms.
-const Suite2 Suite = 2
+// The cipher suites this package implements. Both use AES-CCM-16-64-128 and
+// SHA-256 for EDHOC and for the application, with an 8-byte MAC.
+const (
+	Suite0 Suite = 0 // X25519, EdDSA
+	Suite2 Suite = 2 // P-256, ES256
+)
 
 // A DHKey is a static Diffie-Hellman private key. *ecdh.PrivateKey satisfies
 // it; so can a key held in hardware.
@@ -47,8 +57,7 @@ type EAD struct {
 // several sessions but must not be changed once it has been passed to
 // NewInitiator or NewResponder.
 type Config struct {
-	// Method is the authentication method. Only MethodStaticStatic is
-	// implemented so far.
+	// Method is the authentication method. Both sides must use the same one.
 	Method Method
 
 	// Suites lists the supported cipher suites. For the Initiator the order
@@ -68,8 +77,11 @@ type Config struct {
 	// Credential is this side's authentication credential, CRED_I or CRED_R.
 	Credential Credential
 
-	// Key is the private authentication key matching Credential. For static
-	// DH authentication it must be a DHKey.
+	// Key is the private authentication key matching Credential: a
+	// crypto.Signer if this side authenticates with a signature, a DHKey if
+	// it uses static DH. Signing keys are ed25519.PrivateKey for EdDSA and
+	// *ecdsa.PrivateKey on P-256 for ES256, or anything else that implements
+	// crypto.Signer with those public keys, such as a key in a KMS.
 	Key any
 
 	// PeerCredential looks up the peer's credential from the ID_CRED field
@@ -90,9 +102,9 @@ func suiteByID(id Suite) (*suites.Suite, bool) {
 	return suites.ByID(int(id))
 }
 
-// check validates the parts of a Config that both roles use.
-func (c *Config) check() error {
-	if c.Method != MethodStaticStatic {
+// check validates a Config for one role.
+func (c *Config) check(initiator bool) error {
+	if c.Method < MethodSignSign || c.Method > MethodStaticStatic {
 		return fmt.Errorf("edhoc: method %d is not supported", c.Method)
 	}
 	if len(c.Suites) == 0 {
@@ -112,15 +124,88 @@ func (c *Config) check() error {
 	if c.Credential.ID.raw == nil {
 		return errors.New("edhoc: Credential.ID is not set")
 	}
-	key, ok := c.Key.(DHKey)
-	if !ok {
+	signs := c.Method.initiatorSigns()
+	if !initiator {
+		signs = c.Method.responderSigns()
+	}
+	pub := c.signerOrDHPublic(signs)
+	if pub == nil && signs {
+		return errors.New("edhoc: signature authentication needs a Key that implements crypto.Signer")
+	}
+	if pub == nil {
 		return errors.New("edhoc: static DH authentication needs a Key that implements DHKey")
 	}
-	if pub, ok := c.Credential.PublicKey.(*ecdh.PublicKey); ok && !pub.Equal(key.PublicKey()) {
+	if c.Credential.PublicKey != nil && !samePublicKey(pub, c.Credential.PublicKey) {
 		return errors.New("edhoc: Key does not match the public key in Credential")
 	}
 	if c.PeerCredential == nil {
 		return errors.New("edhoc: PeerCredential is not set")
 	}
 	return nil
+}
+
+// signerOrDHPublic returns the public half of Key, or nil if Key is not of the
+// kind the method needs.
+func (c *Config) signerOrDHPublic(signs bool) crypto.PublicKey {
+	if signs {
+		if k, ok := c.Key.(crypto.Signer); ok {
+			return k.Public()
+		}
+		return nil
+	}
+	if k, ok := c.Key.(DHKey); ok {
+		return k.PublicKey()
+	}
+	return nil
+}
+
+// dhPublicKey returns pub as an ECDH public key on curve.
+func dhPublicKey(pub crypto.PublicKey, curve ecdh.Curve) (*ecdh.PublicKey, bool) {
+	switch k := pub.(type) {
+	case *ecdh.PublicKey:
+		return k, k.Curve() == curve
+	case *ecdsa.PublicKey:
+		e, err := k.ECDH()
+		return e, err == nil && e.Curve() == curve
+	}
+	return nil, false
+}
+
+// signaturePublicKey returns pub in the form the suite's signature algorithm
+// verifies with.
+func signaturePublicKey(pub crypto.PublicKey, s *suites.Suite) (crypto.PublicKey, bool) {
+	switch s.SigAlg {
+	case suites.AlgEdDSA:
+		k, ok := pub.(ed25519.PublicKey)
+		return k, ok && len(k) == ed25519.PublicKeySize
+	case suites.AlgES256:
+		switch k := pub.(type) {
+		case *ecdsa.PublicKey:
+			return k, k.Curve == elliptic.P256()
+		case *ecdh.PublicKey:
+			if k.Curve() != ecdh.P256() {
+				return nil, false
+			}
+			e, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), k.Bytes())
+			return e, err == nil
+		}
+	}
+	return nil, false
+}
+
+// samePublicKey reports whether a and b are the same key. A P-256 key may be
+// given as *ecdsa.PublicKey or *ecdh.PublicKey.
+func samePublicKey(a, b crypto.PublicKey) bool {
+	if ea, ok := a.(*ecdsa.PublicKey); ok {
+		if e, err := ea.ECDH(); err == nil {
+			a = e
+		}
+	}
+	if eb, ok := b.(*ecdsa.PublicKey); ok {
+		if e, err := eb.ECDH(); err == nil {
+			b = e
+		}
+	}
+	k, ok := a.(interface{ Equal(crypto.PublicKey) bool })
+	return ok && k.Equal(b)
 }

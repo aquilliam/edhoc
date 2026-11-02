@@ -2,6 +2,7 @@ package edhoc
 
 import (
 	"bytes"
+	"crypto/ecdh"
 	"crypto/subtle"
 
 	"github.com/aquilliam/edhoc/internal/cbor"
@@ -31,16 +32,21 @@ func (r *Responder) writeMessage2(ead []EAD) ([]byte, error) {
 	if err := h.derivePRK2e(gY); err != nil {
 		return nil, err
 	}
-	key, err := h.staticKey()
-	if err != nil {
-		return nil, err
-	}
-	gRX, err := key.ECDH(h.peerEph)
-	if err != nil {
-		return nil, wrapf(err, "computing G_RX")
-	}
-	if err := h.derivePRK3e2m(gRX); err != nil {
-		return nil, err
+	signs := h.cfg.Method.responderSigns()
+	if signs {
+		h.prk3e2m = h.prk2e
+	} else {
+		key, err := h.staticKey()
+		if err != nil {
+			return nil, err
+		}
+		gRX, err := key.ECDH(h.peerEph)
+		if err != nil {
+			return nil, wrapf(err, "computing G_RX")
+		}
+		if err := h.derivePRK3e2m(gRX); err != nil {
+			return nil, err
+		}
 	}
 
 	cred := &h.cfg.Credential
@@ -49,10 +55,17 @@ func (r *Responder) writeMessage2(ead []EAD) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	sigOrMAC := mac2
+	if signs {
+		sigOrMAC, err = h.suite.Sign(h.signer(), toBeSigned(cred.ID, h.th2, cred.Raw, eadRaw, mac2))
+		if err != nil {
+			return nil, wrapf(err, "signing message_2")
+		}
+	}
 	// PLAINTEXT_2 = ( C_R, ID_CRED_R / bstr / -24..23, Signature_or_MAC_2, ? EAD_2 )
 	pt := cbor.AppendID(nil, h.cR)
 	pt = cred.ID.appendCompact(pt)
-	pt = cbor.AppendBytes(pt, mac2)
+	pt = cbor.AppendBytes(pt, sigOrMAC)
 	pt = append(pt, eadRaw...)
 
 	keystream, err := kdf(h.suite, h.prk2e, labelKeystream2, h.th2, len(pt))
@@ -120,7 +133,7 @@ func (i *Initiator) readMessage2(msg []byte) error {
 	if err != nil {
 		return wrapf(err, "malformed PLAINTEXT_2: ID_CRED_R")
 	}
-	mac2, err := d.Bytes()
+	sigOrMAC, err := d.Bytes()
 	if err != nil {
 		return wrapf(err, "malformed PLAINTEXT_2: Signature_or_MAC_2")
 	}
@@ -133,23 +146,32 @@ func (i *Initiator) readMessage2(msg []byte) error {
 	}
 	h.cR = bytes.Clone(cR)
 
-	gR, err := i.h.lookupPeer(idCredR)
+	signs := h.cfg.Method.responderSigns()
+	peerKey, err := h.lookupPeer(idCredR, signs)
 	if err != nil {
 		return err
 	}
-	x, _ := h.ephemeral()
-	gRX, err := x.ECDH(gR)
-	if err != nil {
-		return wrapf(err, "computing G_RX")
+	if signs {
+		h.prk3e2m = h.prk2e
+	} else {
+		x, _ := h.ephemeral()
+		gRX, err := x.ECDH(peerKey.(*ecdh.PublicKey))
+		if err != nil {
+			return wrapf(err, "computing G_RX")
+		}
+		if err := h.derivePRK3e2m(gRX); err != nil {
+			return err
+		}
 	}
-	if err := h.derivePRK3e2m(gRX); err != nil {
+	mac2, err := h.mac2(idCredR, h.peer.Raw, eadRaw)
+	if err != nil {
 		return err
 	}
-	want, err := h.mac2(idCredR, h.peer.Raw, eadRaw)
-	if err != nil {
-		return err
-	}
-	if !macEqual(mac2, want) {
+	if signs {
+		if !h.suite.Verify(peerKey, toBeSigned(idCredR, h.th2, h.peer.Raw, eadRaw, mac2), sigOrMAC) {
+			return failf("message_2 signature verification failed")
+		}
+	} else if !macEqual(sigOrMAC, mac2) {
 		return failf("message_2 MAC verification failed")
 	}
 	h.peerEAD, err = h.acceptEAD(ead)

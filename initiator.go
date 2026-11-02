@@ -32,7 +32,7 @@ type Initiator struct {
 
 // NewInitiator returns an Initiator for a new session.
 func NewInitiator(cfg *Config) (*Initiator, error) {
-	if err := cfg.check(); err != nil {
+	if err := cfg.check(true); err != nil {
 		return nil, err
 	}
 	i := 0

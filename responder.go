@@ -31,7 +31,7 @@ type Responder struct {
 
 // NewResponder returns a Responder for a new session.
 func NewResponder(cfg *Config) (*Responder, error) {
-	if err := cfg.check(); err != nil {
+	if err := cfg.check(false); err != nil {
 		return nil, err
 	}
 	return &Responder{h: handshake{cfg: cfg, cR: bytes.Clone(cfg.ConnID)}}, nil

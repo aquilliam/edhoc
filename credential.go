@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"crypto/x509"
 	"errors"
 	"unicode/utf8"
 
@@ -13,14 +17,20 @@ import (
 // COSE header parameter and key labels (RFC 9052, Sections 3.1 and 7.1).
 const (
 	headerKID = 4
+	headerX5T = 34
 
-	keyKty  = 1
-	keyKID  = 2
-	keyCrv  = -1
-	keyX    = -2
-	keyY    = -3
-	ktyEC2  = 2
-	crvP256 = 1
+	algSHA256_64 = -15
+
+	keyKty     = 1
+	keyKID     = 2
+	keyCrv     = -1
+	keyX       = -2
+	keyY       = -3
+	ktyOKP     = 1
+	ktyEC2     = 2
+	crvP256    = 1
+	crvX25519  = 4
+	crvEd25519 = 6
 
 	claimSub   = 2
 	claimCnf   = 8
@@ -39,6 +49,29 @@ func KeyID(kid []byte) IDCred {
 	b = cbor.AppendInt(b, headerKID)
 	b = cbor.AppendBytes(b, kid)
 	return IDCred{raw: b}
+}
+
+// X5T returns the ID_CRED { 34 : [-15, hash] } that identifies a DER-encoded
+// X.509 certificate by the first 8 bytes of its SHA-256 hash (RFC 9360).
+func X5T(der []byte) IDCred {
+	h := sha256.Sum256(der)
+	b := cbor.AppendMap(nil, 1)
+	b = cbor.AppendInt(b, headerX5T)
+	b = cbor.AppendArray(b, 2)
+	b = cbor.AppendInt(b, algSHA256_64)
+	b = cbor.AppendBytes(b, h[:8])
+	return IDCred{raw: b}
+}
+
+// ParseIDCred returns the IDCred for an encoded COSE header map, for ID_CRED
+// forms this package has no constructor for.
+func ParseIDCred(raw []byte) (IDCred, error) {
+	d := cbor.NewDecoder(raw)
+	m, err := d.RawHeaderMap()
+	if err != nil || !d.Done() {
+		return IDCred{}, errors.New("edhoc: ID_CRED is not a single COSE header map")
+	}
+	return IDCred{raw: bytes.Clone(m)}, nil
 }
 
 // Bytes returns the encoded header map.
@@ -112,13 +145,31 @@ type Credential struct {
 	PublicKey crypto.PublicKey
 }
 
+// NewX509 returns the credential for a DER-encoded X.509 certificate,
+// identified by X5T. CRED is the certificate as a CBOR byte string (RFC 9528,
+// Section 3.5.2). The certificate is parsed for its public key but not
+// verified; that is up to the application.
+func NewX509(der []byte) (Credential, error) {
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return Credential{}, err
+	}
+	return Credential{
+		ID:        X5T(der),
+		Raw:       cbor.AppendBytes(nil, der),
+		PublicKey: cert.PublicKey,
+	}, nil
+}
+
 var errCCS = errors.New("edhoc: malformed CWT Claims Set")
 
 // ParseCCS returns the credential for a CWT Claims Set holding a COSE_Key in
 // a 'cnf' claim, the way EDHOC carries raw public keys. If the COSE_Key has a
 // kid, the credential's ID is { 4 : kid }; otherwise the caller sets ID.
 //
-// Only EC2 keys on P-256 with both coordinates are supported so far.
+// Supported keys are P-256 (EC2 with both coordinates), X25519 and Ed25519.
+// P-256 and X25519 keys come back as *ecdh.PublicKey, Ed25519 keys as
+// ed25519.PublicKey.
 func ParseCCS(ccs []byte) (Credential, error) {
 	d := cbor.NewDecoder(ccs)
 	if _, err := cbor.NewDecoder(ccs).Raw(); err != nil {
@@ -156,16 +207,17 @@ func ParseCCS(ccs []byte) (Credential, error) {
 
 // NewCCS returns a credential for a raw public key: a CWT Claims Set with an
 // optional subject claim and a COSE_Key in a 'cnf' claim (RFC 9528, Section
-// 3.5.2). The credential's ID is { 4 : kid }. Only P-256 keys are supported so
-// far.
-func NewCCS(subject string, kid []byte, pub *ecdh.PublicKey) (Credential, error) {
-	if pub.Curve() != ecdh.P256() {
-		return Credential{}, errors.New("edhoc: NewCCS supports only P-256 keys")
-	}
+// 3.5.2). The credential's ID is { 4 : kid }. pub may be a P-256 key
+// (*ecdh.PublicKey or *ecdsa.PublicKey), an X25519 key (*ecdh.PublicKey) or
+// an ed25519.PublicKey.
+func NewCCS(subject string, kid []byte, pub crypto.PublicKey) (Credential, error) {
 	if !utf8.ValidString(subject) {
 		return Credential{}, errors.New("edhoc: subject is not valid UTF-8")
 	}
-	point := pub.Bytes()
+	key, err := appendCOSEKey(nil, kid, pub)
+	if err != nil {
+		return Credential{}, err
+	}
 	var b []byte
 	if subject != "" {
 		b = cbor.AppendMap(b, 2)
@@ -177,22 +229,59 @@ func NewCCS(subject string, kid []byte, pub *ecdh.PublicKey) (Credential, error)
 	b = cbor.AppendInt(b, claimCnf)
 	b = cbor.AppendMap(b, 1)
 	b = cbor.AppendInt(b, cnfCOSEKey)
-	b = cbor.AppendMap(b, 5)
-	b = cbor.AppendInt(b, keyKty)
-	b = cbor.AppendInt(b, ktyEC2)
-	b = cbor.AppendInt(b, keyKID)
-	b = cbor.AppendBytes(b, kid)
-	b = cbor.AppendInt(b, keyCrv)
-	b = cbor.AppendInt(b, crvP256)
-	b = cbor.AppendInt(b, keyX)
-	b = cbor.AppendBytes(b, point[1:33])
-	b = cbor.AppendInt(b, keyY)
-	b = cbor.AppendBytes(b, point[33:])
+	b = append(b, key...)
 	return Credential{ID: KeyID(kid), Raw: b, PublicKey: pub}, nil
 }
 
+// appendCOSEKey appends a COSE_Key with deterministically ordered labels.
+func appendCOSEKey(b, kid []byte, pub crypto.PublicKey) ([]byte, error) {
+	if k, ok := pub.(*ecdsa.PublicKey); ok {
+		e, err := k.ECDH()
+		if err != nil {
+			return nil, err
+		}
+		pub = e
+	}
+	var kty, crv int64
+	var x, y []byte
+	switch k := pub.(type) {
+	case *ecdh.PublicKey:
+		switch k.Curve() {
+		case ecdh.P256():
+			p := k.Bytes()
+			kty, crv, x, y = ktyEC2, crvP256, p[1:33], p[33:]
+		case ecdh.X25519():
+			kty, crv, x = ktyOKP, crvX25519, k.Bytes()
+		default:
+			return nil, errors.New("edhoc: unsupported curve for a COSE_Key")
+		}
+	case ed25519.PublicKey:
+		kty, crv, x = ktyOKP, crvEd25519, k
+	default:
+		return nil, errors.New("edhoc: unsupported public key type for a COSE_Key")
+	}
+	n := 4
+	if y != nil {
+		n = 5
+	}
+	b = cbor.AppendMap(b, n)
+	b = cbor.AppendInt(b, keyKty)
+	b = cbor.AppendInt(b, kty)
+	b = cbor.AppendInt(b, keyKID)
+	b = cbor.AppendBytes(b, kid)
+	b = cbor.AppendInt(b, keyCrv)
+	b = cbor.AppendInt(b, crv)
+	b = cbor.AppendInt(b, keyX)
+	b = cbor.AppendBytes(b, x)
+	if y != nil {
+		b = cbor.AppendInt(b, keyY)
+		b = cbor.AppendBytes(b, y)
+	}
+	return b, nil
+}
+
 // parseCOSEKey returns the public key and kid of a COSE_Key.
-func parseCOSEKey(b []byte) (*ecdh.PublicKey, []byte, error) {
+func parseCOSEKey(b []byte) (crypto.PublicKey, []byte, error) {
 	var kty, crv int64
 	var kid, x, y []byte
 	err := readMap(cbor.NewDecoder(b), func(label int64, d *cbor.Decoder) error {
@@ -216,13 +305,19 @@ func parseCOSEKey(b []byte) (*ecdh.PublicKey, []byte, error) {
 	if err != nil {
 		return nil, nil, errCCS
 	}
-	if kty != ktyEC2 || crv != crvP256 || len(x) != 32 || len(y) != 32 {
-		return nil, nil, errors.New("edhoc: COSE_Key is not a P-256 EC2 key with x and y")
+	var pub crypto.PublicKey
+	switch {
+	case kty == ktyEC2 && crv == crvP256 && len(x) == 32 && len(y) == 32:
+		pub, err = ecdh.P256().NewPublicKey(append(append([]byte{4}, x...), y...))
+	case kty == ktyOKP && crv == crvX25519 && len(x) == 32 && y == nil:
+		pub, err = ecdh.X25519().NewPublicKey(x)
+	case kty == ktyOKP && crv == crvEd25519 && len(x) == ed25519.PublicKeySize && y == nil:
+		pub = ed25519.PublicKey(bytes.Clone(x))
+	default:
+		return nil, nil, errors.New("edhoc: unsupported COSE_Key")
 	}
-	point := append(append([]byte{4}, x...), y...)
-	pub, err := ecdh.P256().NewPublicKey(point)
 	if err != nil {
-		return nil, nil, errors.New("edhoc: COSE_Key is not a valid P-256 point")
+		return nil, nil, errors.New("edhoc: COSE_Key holds an invalid public key")
 	}
 	return pub, bytes.Clone(kid), nil
 }

@@ -28,7 +28,8 @@
 //
 // # Status
 //
-// The package implements method 3 (static DH keys on both sides) with cipher
-// suite 2, and credentials that are raw public keys in a CWT Claims Set,
-// identified by kid. The API may change before v1.0.
+// The package implements all four authentication methods with cipher suites
+// 0 and 2. Credentials can be raw public keys in a CWT Claims Set (NewCCS,
+// ParseCCS) or X.509 certificates (NewX509); any other form can be used by
+// filling in a Credential directly. The API may change before v1.0.
 package edhoc

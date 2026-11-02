@@ -2,6 +2,7 @@ package edhoc
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ecdh"
 	"crypto/subtle"
 	"errors"
@@ -66,9 +67,15 @@ func (h *handshake) staticKey() (DHKey, error) {
 	return k, nil
 }
 
-// lookupPeer asks the application for the peer's credential and returns its
+// signer returns this side's signature key.
+func (h *handshake) signer() crypto.Signer {
+	return h.cfg.Key.(crypto.Signer)
+}
+
+// lookupPeer asks the application for the peer's credential and returns the
+// authentication key in it: a signature key if the peer signs, otherwise a
 // static DH key.
-func (h *handshake) lookupPeer(id IDCred) (*ecdh.PublicKey, error) {
+func (h *handshake) lookupPeer(id IDCred, peerSigns bool) (crypto.PublicKey, error) {
 	cred, err := h.cfg.PeerCredential(id)
 	if errors.Is(err, ErrUnknownCredential) {
 		return nil, &Error{Code: ErrCodeUnknownCredential, msg: "unknown credential", err: err}
@@ -76,12 +83,19 @@ func (h *handshake) lookupPeer(id IDCred) (*ecdh.PublicKey, error) {
 	if err != nil {
 		return nil, wrapf(err, "looking up the peer credential")
 	}
-	pub, ok := cred.PublicKey.(*ecdh.PublicKey)
-	if !ok || pub.Curve() != h.suite.Curve {
-		return nil, failf("peer credential has no static DH key for cipher suite %d", h.suite.ID)
-	}
 	if len(cred.Raw) == 0 {
 		return nil, failf("peer credential is empty")
+	}
+	var pub crypto.PublicKey
+	var ok bool
+	if peerSigns {
+		pub, ok = signaturePublicKey(cred.PublicKey, h.suite)
+	} else {
+		pub, ok = dhPublicKey(cred.PublicKey, h.suite.Curve)
+	}
+	if !ok {
+		return nil, failf("peer credential has no key usable with method %d and cipher suite %d",
+			h.cfg.Method, h.suite.ID)
 	}
 	h.peer = cred
 	return pub, nil
@@ -119,25 +133,49 @@ func (h *handshake) derivePRK4e3m(gIY []byte) error {
 	return err
 }
 
+// macLength returns the length of MAC_2 or MAC_3: the EDHOC MAC length when
+// the sender uses static DH, the hash length when it signs.
+func (h *handshake) macLength(signs bool) int {
+	if signs {
+		return h.suite.HashLength()
+	}
+	return h.suite.MACLength
+}
+
 // mac2 computes MAC_2 with context_2 = << C_R, ID_CRED_R, TH_2, CRED_R,
-// ? EAD_2 >>. With static DH it is also Signature_or_MAC_2.
+// ? EAD_2 >>.
 func (h *handshake) mac2(idCredR IDCred, credR, ead []byte) ([]byte, error) {
 	ctx := cbor.AppendID(nil, h.cR)
 	ctx = append(ctx, idCredR.raw...)
 	ctx = cbor.AppendBytes(ctx, h.th2)
 	ctx = append(ctx, credR...)
 	ctx = append(ctx, ead...)
-	return kdf(h.suite, h.prk3e2m, labelMAC2, ctx, h.suite.MACLength)
+	return kdf(h.suite, h.prk3e2m, labelMAC2, ctx, h.macLength(h.cfg.Method.responderSigns()))
 }
 
 // mac3 computes MAC_3 with context_3 = << ID_CRED_I, TH_3, CRED_I, ? EAD_3 >>.
-// With static DH it is also Signature_or_MAC_3.
 func (h *handshake) mac3(idCredI IDCred, credI, ead []byte) ([]byte, error) {
 	ctx := append([]byte{}, idCredI.raw...)
 	ctx = cbor.AppendBytes(ctx, h.th3)
 	ctx = append(ctx, credI...)
 	ctx = append(ctx, ead...)
-	return kdf(h.suite, h.prk4e3m, labelMAC3, ctx, h.suite.MACLength)
+	return kdf(h.suite, h.prk4e3m, labelMAC3, ctx, h.macLength(h.cfg.Method.initiatorSigns()))
+}
+
+// toBeSigned returns the Sig_structure of the COSE_Sign1 whose signature is
+// Signature_or_MAC_2 or Signature_or_MAC_3 (RFC 9528, Sections 5.3.2 and
+// 5.4.2):
+//
+//	[ "Signature1", << ID_CRED_x >>, << TH_x, CRED_x, ? EAD_x >>, MAC_x ]
+func toBeSigned(idCred IDCred, th, cred, ead, mac []byte) []byte {
+	aad := cbor.AppendBytes(nil, th)
+	aad = append(aad, cred...)
+	aad = append(aad, ead...)
+	b := cbor.AppendArray(nil, 4)
+	b = cbor.AppendText(b, "Signature1")
+	b = cbor.AppendBytes(b, idCred.raw)
+	b = cbor.AppendBytes(b, aad)
+	return cbor.AppendBytes(b, mac)
 }
 
 // macEqual compares a received MAC in constant time.

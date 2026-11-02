@@ -10,8 +10,8 @@ EDHOC messages as bytes and returns bytes to send.
 
 ## Status
 
-Early. Method 3 with cipher suite 2 works and reproduces the RFC 9529 trace
-byte for byte; the rest of the RFC is still to come. Expect breaking changes
+Early. Methods 0–3 with cipher suites 0 and 2 work, and both RFC 9529 traces
+are reproduced byte for byte; the rest of the RFC is still to come. Expect breaking changes
 until v1.0.
 
 ## Goals
@@ -27,14 +27,15 @@ until v1.0.
 
 | | Status |
 |---|---|
+| Cipher suite 0 (AES-CCM-16-64-128, SHA-256, X25519, EdDSA) | yes |
 | Cipher suite 2 (AES-CCM-16-64-128, SHA-256, P-256, ES256) | yes |
 | Other cipher suites | planned |
-| Method 3 (static DH keys on both sides) | yes |
-| Methods 0–2 (signature keys) | planned |
+| Methods 0–3 (signature and static DH keys, in any combination) | yes |
 | message_4, EAD, error messages, cipher suite negotiation | yes |
 | EDHOC_Exporter, EDHOC_KeyUpdate, OSCORE parameters | yes |
 | Raw public keys (CCS) identified by `kid` | yes |
-| Other credential types and ID_CRED forms | planned |
+| X.509 certificates identified by `x5t` | yes |
+| `x5chain`, `kccs` and other ID_CRED forms | planned; usable now through `ParseIDCred` |
 
 ## Example
 
