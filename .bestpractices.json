@@ -120,5 +120,13 @@
   "dynamic_analysis_enable_assertions_status": "Met",
   "dynamic_analysis_enable_assertions_justification": "Fuzz targets check invariants such as encode and decode round trips and that an accepted message lets the session continue, and CI runs the tests with the race detector.",
   "dynamic_analysis_fixed_status": "Met",
-  "dynamic_analysis_fixed_justification": "No vulnerabilities have been found by dynamic analysis."
+  "dynamic_analysis_fixed_justification": "No vulnerabilities have been found by dynamic analysis.",
+  "version_unique_status": "Met",
+  "version_unique_justification": "Each release is a git tag (for example v0.1.0) that the Go module system uses as the version.",
+  "version_semver_status": "Met",
+  "version_semver_justification": "Releases follow semantic versioning, as Go modules require.",
+  "version_tags_status": "Met",
+  "version_tags_justification": "Releases are signed git tags: https://github.com/aquilliam/edhoc/tags",
+  "release_notes_status": "Met",
+  "release_notes_justification": "https://github.com/aquilliam/edhoc/blob/main/CHANGELOG.md"
 }
