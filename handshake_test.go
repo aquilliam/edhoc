@@ -43,7 +43,7 @@ type traceSetup struct {
 
 // newTrace2 sets up both sides with the keys and credentials of RFC 9529,
 // Section 3.
-func newTrace2(t *testing.T) *traceSetup {
+func newTrace2(t testing.TB) *traceSetup {
 	tr := trace2(t)
 	credI, err := ParseCCS(tr("CRED_I (CBOR Data Item)"))
 	if err != nil {
@@ -86,7 +86,7 @@ func newTrace2(t *testing.T) *traceSetup {
 	}
 }
 
-func ephemeralKey(t *testing.T, raw []byte) *ecdh.PrivateKey {
+func ephemeralKey(t testing.TB, raw []byte) *ecdh.PrivateKey {
 	t.Helper()
 	k, err := ecdh.P256().NewPrivateKey(raw)
 	if err != nil {

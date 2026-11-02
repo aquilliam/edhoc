@@ -11,7 +11,7 @@ import (
 )
 
 // trace2 returns a function that looks up values from RFC 9529, Section 3.
-func trace2(t *testing.T) func(string) []byte {
+func trace2(t testing.TB) func(string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/rfc9529_trace2.json")
 	if err != nil {
@@ -35,7 +35,7 @@ func trace2(t *testing.T) func(string) []byte {
 	}
 }
 
-func check(t *testing.T, name string, got []byte, err error, want []byte) {
+func check(t testing.TB, name string, got []byte, err error, want []byte) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
