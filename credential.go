@@ -29,6 +29,7 @@ const (
 	ktyOKP     = 1
 	ktyEC2     = 2
 	crvP256    = 1
+	crvP384    = 2
 	crvX25519  = 4
 	crvEd25519 = 6
 
@@ -167,9 +168,9 @@ var errCCS = errors.New("edhoc: malformed CWT Claims Set")
 // a 'cnf' claim, the way EDHOC carries raw public keys. If the COSE_Key has a
 // kid, the credential's ID is { 4 : kid }; otherwise the caller sets ID.
 //
-// Supported keys are P-256 (EC2 with both coordinates), X25519 and Ed25519.
-// P-256 and X25519 keys come back as *ecdh.PublicKey, Ed25519 keys as
-// ed25519.PublicKey.
+// Supported keys are P-256 and P-384 (EC2 with both coordinates), X25519 and
+// Ed25519. P-256, P-384 and X25519 keys come back as *ecdh.PublicKey, Ed25519
+// keys as ed25519.PublicKey.
 func ParseCCS(ccs []byte) (Credential, error) {
 	d := cbor.NewDecoder(ccs)
 	if _, err := cbor.NewDecoder(ccs).Raw(); err != nil {
@@ -207,7 +208,7 @@ func ParseCCS(ccs []byte) (Credential, error) {
 
 // NewCCS returns a credential for a raw public key: a CWT Claims Set with an
 // optional subject claim and a COSE_Key in a 'cnf' claim (RFC 9528, Section
-// 3.5.2). The credential's ID is { 4 : kid }. pub may be a P-256 key
+// 3.5.2). The credential's ID is { 4 : kid }. pub may be a P-256 or P-384 key
 // (*ecdh.PublicKey or *ecdsa.PublicKey), an X25519 key (*ecdh.PublicKey) or
 // an ed25519.PublicKey.
 func NewCCS(subject string, kid []byte, pub crypto.PublicKey) (Credential, error) {
@@ -250,6 +251,9 @@ func appendCOSEKey(b, kid []byte, pub crypto.PublicKey) ([]byte, error) {
 		case ecdh.P256():
 			p := k.Bytes()
 			kty, crv, x, y = ktyEC2, crvP256, p[1:33], p[33:]
+		case ecdh.P384():
+			p := k.Bytes()
+			kty, crv, x, y = ktyEC2, crvP384, p[1:49], p[49:]
 		case ecdh.X25519():
 			kty, crv, x = ktyOKP, crvX25519, k.Bytes()
 		default:
@@ -309,6 +313,8 @@ func parseCOSEKey(b []byte) (crypto.PublicKey, []byte, error) {
 	switch {
 	case kty == ktyEC2 && crv == crvP256 && len(x) == 32 && len(y) == 32:
 		pub, err = ecdh.P256().NewPublicKey(append(append([]byte{4}, x...), y...))
+	case kty == ktyEC2 && crv == crvP384 && len(x) == 48 && len(y) == 48:
+		pub, err = ecdh.P384().NewPublicKey(append(append([]byte{4}, x...), y...))
 	case kty == ktyOKP && crv == crvX25519 && len(x) == 32 && y == nil:
 		pub, err = ecdh.X25519().NewPublicKey(x)
 	case kty == ktyOKP && crv == crvEd25519 && len(x) == ed25519.PublicKeySize && y == nil:

@@ -5,7 +5,6 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/elliptic"
 	"errors"
 	"fmt"
 	"slices"
@@ -35,13 +34,14 @@ type Suite int
 // comment after each lists the EDHOC AEAD and hash algorithms, the MAC length
 // for static DH authentication, and the key exchange and signature
 // algorithms. Suites 0 to 3 use AES-CCM-16-64-128 and SHA-256 for the
-// application, and suite 6 uses A128GCM and SHA-256.
+// application; suites 6 and 24 use their own EDHOC AEAD and hash.
 const (
-	Suite0 Suite = 0 // AES-CCM-16-64-128, SHA-256, 8, X25519, EdDSA
-	Suite1 Suite = 1 // AES-CCM-16-128-128, SHA-256, 16, X25519, EdDSA
-	Suite2 Suite = 2 // AES-CCM-16-64-128, SHA-256, 8, P-256, ES256
-	Suite3 Suite = 3 // AES-CCM-16-128-128, SHA-256, 16, P-256, ES256
-	Suite6 Suite = 6 // A128GCM, SHA-256, 16, X25519, ES256
+	Suite0  Suite = 0  // AES-CCM-16-64-128, SHA-256, 8, X25519, EdDSA
+	Suite1  Suite = 1  // AES-CCM-16-128-128, SHA-256, 16, X25519, EdDSA
+	Suite2  Suite = 2  // AES-CCM-16-64-128, SHA-256, 8, P-256, ES256
+	Suite3  Suite = 3  // AES-CCM-16-128-128, SHA-256, 16, P-256, ES256
+	Suite6  Suite = 6  // A128GCM, SHA-256, 16, X25519, ES256
+	Suite24 Suite = 24 // A256GCM, SHA-384, 16, P-384, ES384
 )
 
 // A DHKey is a static Diffie-Hellman private key. *ecdh.PrivateKey satisfies
@@ -180,27 +180,23 @@ func dhPublicKey(pub crypto.PublicKey, curve ecdh.Curve) (*ecdh.PublicKey, bool)
 // signaturePublicKey returns pub in the form the suite's signature algorithm
 // verifies with.
 func signaturePublicKey(pub crypto.PublicKey, s *suites.Suite) (crypto.PublicKey, bool) {
-	switch s.SigAlg {
-	case suites.AlgEdDSA:
+	if s.SigAlg == suites.AlgEdDSA {
 		k, ok := pub.(ed25519.PublicKey)
 		return k, ok && len(k) == ed25519.PublicKeySize
-	case suites.AlgES256:
-		switch k := pub.(type) {
-		case *ecdsa.PublicKey:
-			return k, k.Curve == elliptic.P256()
-		case *ecdh.PublicKey:
-			if k.Curve() != ecdh.P256() {
-				return nil, false
-			}
-			e, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), k.Bytes())
-			return e, err == nil
-		}
+	}
+	curve := s.SignatureCurve()
+	switch k := pub.(type) {
+	case *ecdsa.PublicKey:
+		return k, k.Curve == curve
+	case *ecdh.PublicKey:
+		e, err := ecdsa.ParseUncompressedPublicKey(curve, k.Bytes())
+		return e, err == nil
 	}
 	return nil, false
 }
 
-// samePublicKey reports whether a and b are the same key. A P-256 key may be
-// given as *ecdsa.PublicKey or *ecdh.PublicKey.
+// samePublicKey reports whether a and b are the same key. A NIST curve key may
+// be given as *ecdsa.PublicKey or *ecdh.PublicKey.
 func samePublicKey(a, b crypto.PublicKey) bool {
 	if ea, ok := a.(*ecdsa.PublicKey); ok {
 		if e, err := ea.ECDH(); err == nil {

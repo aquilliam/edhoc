@@ -37,6 +37,11 @@ var p256 = newCurve(32,
 	"ffffffff00000001000000000000000000000000ffffffffffffffffffffffff",
 	"5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b")
 
+// P-384 parameters from SEC 2, Section 2.5.1.
+var p384 = newCurve(48,
+	"fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff",
+	"b3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef")
+
 // decompress recovers a point from its x-coordinate, following RFC 9528,
 // Appendix B. Either square root gives the same ECDH result, so the sign of y
 // is not needed. The x-coordinate is public, so variable-time arithmetic is

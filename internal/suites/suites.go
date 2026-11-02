@@ -9,10 +9,13 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
+	_ "crypto/sha256"
+	_ "crypto/sha512"
 	"encoding/asn1"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/aquilliam/edhoc/internal/ccm"
@@ -21,10 +24,13 @@ import (
 // COSE algorithm identifiers (RFC 9053).
 const (
 	AlgA128GCM          = 1
+	AlgA256GCM          = 3
 	AlgAESCCM16_64_128  = 10
 	AlgAESCCM16_128_128 = 30
 	AlgSHA256           = -16
+	AlgSHA384           = -43
 	AlgES256            = -7
+	AlgES384            = -35
 	AlgEdDSA            = -8
 )
 
@@ -136,6 +142,22 @@ var suite6 = &Suite{
 	AppKeySize: 16,
 }
 
+var suite24 = &Suite{
+	ID:         24,
+	KeySize:    32,
+	NonceSize:  12,
+	TagSize:    16,
+	newAEAD:    newAESGCM,
+	Hash:       crypto.SHA384,
+	MACLength:  16,
+	Curve:      ecdh.P384(),
+	params:     p384,
+	SigAlg:     AlgES384,
+	AppAEAD:    AlgA256GCM,
+	AppHash:    AlgSHA384,
+	AppKeySize: 32,
+}
+
 // ByID returns the cipher suite with the given label, or false if it is not
 // supported.
 func ByID(id int) (*Suite, bool) {
@@ -150,6 +172,8 @@ func ByID(id int) (*Suite, bool) {
 		return suite3, true
 	case 6:
 		return suite6, true
+	case 24:
+		return suite24, true
 	}
 	return nil, false
 }
@@ -207,8 +231,8 @@ func (s *Suite) CompactPublicKey(pub *ecdh.PublicKey) []byte {
 	return pub.Bytes()[1 : 1+s.params.size]
 }
 
-// ParsePublicKey parses a public key in compact representation. For P-256 it
-// rejects an x-coordinate that is not reduced modulo p or that is not on the
+// ParsePublicKey parses a public key in compact representation. For P-256 and
+// P-384 it rejects an x-coordinate that is not reduced modulo p or that is not on the
 // curve. An X25519 key of low order is caught later: ECDH with it fails.
 func (s *Suite) ParsePublicKey(x []byte) (*ecdh.PublicKey, error) {
 	if s.params == nil {
@@ -223,37 +247,22 @@ func (s *Suite) ParsePublicKey(x []byte) (*ecdh.PublicKey, error) {
 // Sign signs msg with key using the EDHOC signature algorithm and returns the
 // signature as COSE encodes it.
 func (s *Suite) Sign(key crypto.Signer, msg []byte) ([]byte, error) {
-	switch s.SigAlg {
-	case AlgEdDSA:
+	if s.SigAlg == AlgEdDSA {
 		if _, ok := key.Public().(ed25519.PublicKey); !ok {
 			return nil, errors.New("suites: EdDSA needs an Ed25519 key")
 		}
 		return key.Sign(rand.Reader, msg, crypto.Hash(0))
-	case AlgES256:
-		return signES256(key, msg)
 	}
-	return nil, errors.New("suites: unsupported signature algorithm")
-}
-
-// Verify reports whether sig is a valid signature of msg by pub, which must be
-// an ed25519.PublicKey for EdDSA and an *ecdsa.PublicKey for ES256.
-func (s *Suite) Verify(pub crypto.PublicKey, msg, sig []byte) bool {
-	switch s.SigAlg {
-	case AlgEdDSA:
-		k, ok := pub.(ed25519.PublicKey)
-		return ok && len(k) == ed25519.PublicKeySize && ed25519.Verify(k, msg, sig)
-	case AlgES256:
-		return verifyES256(pub, msg, sig)
+	e, ok := ecdsaAlgs[s.SigAlg]
+	if !ok {
+		return nil, errors.New("suites: unsupported signature algorithm")
 	}
-	return false
-}
-
-func signES256(key crypto.Signer, msg []byte) ([]byte, error) {
-	if pub, ok := key.Public().(*ecdsa.PublicKey); !ok || pub.Curve.Params().Name != "P-256" {
-		return nil, errors.New("suites: ES256 needs a P-256 ECDSA key")
+	if pub, ok := key.Public().(*ecdsa.PublicKey); !ok || pub.Curve != e.curve {
+		return nil, fmt.Errorf("suites: %s needs a %s ECDSA key", e.name, e.curve.Params().Name)
 	}
-	digest := sha256.Sum256(msg)
-	der, err := key.Sign(rand.Reader, digest[:], crypto.SHA256)
+	h := e.hash.New()
+	h.Write(msg)
+	der, err := key.Sign(rand.Reader, h.Sum(nil), e.hash)
 	if err != nil {
 		return nil, err
 	}
@@ -261,22 +270,57 @@ func signES256(key crypto.Signer, msg []byte) ([]byte, error) {
 	if rest, err := asn1.Unmarshal(der, &sig); err != nil || len(rest) != 0 {
 		return nil, errors.New("suites: signer returned a malformed ECDSA signature")
 	}
-	if sig.R.Sign() <= 0 || sig.S.Sign() <= 0 || sig.R.BitLen() > 256 || sig.S.BitLen() > 256 {
+	n := e.size()
+	if sig.R.Sign() <= 0 || sig.S.Sign() <= 0 || sig.R.BitLen() > 8*n || sig.S.BitLen() > 8*n {
 		return nil, errors.New("suites: signer returned a malformed ECDSA signature")
 	}
-	out := make([]byte, 64)
-	sig.R.FillBytes(out[:32])
-	sig.S.FillBytes(out[32:])
+	out := make([]byte, 2*n)
+	sig.R.FillBytes(out[:n])
+	sig.S.FillBytes(out[n:])
 	return out, nil
 }
 
-func verifyES256(pub crypto.PublicKey, msg, sig []byte) bool {
-	k, ok := pub.(*ecdsa.PublicKey)
-	if !ok || k.Curve.Params().Name != "P-256" || len(sig) != 64 {
+// Verify reports whether sig is a valid signature of msg by pub, which must be
+// an ed25519.PublicKey for EdDSA and an *ecdsa.PublicKey on the right curve
+// for ECDSA.
+func (s *Suite) Verify(pub crypto.PublicKey, msg, sig []byte) bool {
+	if s.SigAlg == AlgEdDSA {
+		k, ok := pub.(ed25519.PublicKey)
+		return ok && len(k) == ed25519.PublicKeySize && ed25519.Verify(k, msg, sig)
+	}
+	e, ok := ecdsaAlgs[s.SigAlg]
+	if !ok {
 		return false
 	}
-	digest := sha256.Sum256(msg)
-	r := new(big.Int).SetBytes(sig[:32])
-	ss := new(big.Int).SetBytes(sig[32:])
-	return ecdsa.Verify(k, digest[:], r, ss)
+	k, ok := pub.(*ecdsa.PublicKey)
+	n := e.size()
+	if !ok || k.Curve != e.curve || len(sig) != 2*n {
+		return false
+	}
+	h := e.hash.New()
+	h.Write(msg)
+	r := new(big.Int).SetBytes(sig[:n])
+	ss := new(big.Int).SetBytes(sig[n:])
+	return ecdsa.Verify(k, h.Sum(nil), r, ss)
+}
+
+// SignatureCurve returns the curve of the suite's ECDSA signature algorithm,
+// or nil for EdDSA.
+func (s *Suite) SignatureCurve() elliptic.Curve {
+	return ecdsaAlgs[s.SigAlg].curve
+}
+
+type ecdsaAlg struct {
+	name  string
+	curve elliptic.Curve
+	hash  crypto.Hash
+}
+
+func (e ecdsaAlg) size() int {
+	return (e.curve.Params().BitSize + 7) / 8
+}
+
+var ecdsaAlgs = map[int]ecdsaAlg{
+	AlgES256: {"ES256", elliptic.P256(), crypto.SHA256},
+	AlgES384: {"ES384", elliptic.P384(), crypto.SHA384},
 }

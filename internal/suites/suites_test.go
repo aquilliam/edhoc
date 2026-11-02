@@ -56,6 +56,7 @@ func TestRegistry(t *testing.T) {
 		{2, 10, 16, 8, 32, 8, 32, AlgES256, 10, -16},
 		{3, 30, 16, 16, 32, 16, 32, AlgES256, 10, -16},
 		{6, 1, 16, 16, 32, 16, 32, AlgES256, 1, -16},
+		{24, 3, 32, 16, 48, 16, 48, AlgES384, 3, -43},
 	} {
 		s, ok := ByID(want.id)
 		if !ok {
@@ -150,10 +151,24 @@ func TestParsePublicKeyRejectsInvalidPoints(t *testing.T) {
 			t.Errorf("%s: ParsePublicKey accepted %s", tt.name, tt.x)
 		}
 	}
+
+	s, _ = ByID(24)
+	p := "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff"
+	for _, x := range []string{p, traceGX, strings.Repeat("00", 47) + "05"} {
+		if _, err := s.ParsePublicKey(unhex(t, x)); err == nil {
+			t.Errorf("P-384: ParsePublicKey accepted %s", x)
+		}
+	}
 }
 
 func TestParsePublicKeyRoundTrip(t *testing.T) {
-	s, _ := ByID(2)
+	for _, id := range []int{2, 24} {
+		s, _ := ByID(id)
+		testParsePublicKeyRoundTrip(t, s)
+	}
+}
+
+func testParsePublicKeyRoundTrip(t *testing.T, s *Suite) {
 	for range 64 {
 		k, err := s.GenerateKey()
 		if err != nil {
@@ -225,8 +240,24 @@ func TestSignVerify(t *testing.T) {
 	}
 }
 
-func TestWycheproofES256(t *testing.T) {
-	data, err := os.ReadFile("testdata/ecdsa_secp256r1_sha256_p1363_test.json")
+func TestWycheproofECDSA(t *testing.T) {
+	for _, tt := range []struct {
+		file  string
+		suite int
+		hash  string
+	}{
+		{"ecdsa_secp256r1_sha256_p1363_test.json", 2, "SHA-256"},
+		{"ecdsa_secp384r1_sha384_p1363_test.json", 24, "SHA-384"},
+	} {
+		t.Run(tt.file, func(t *testing.T) {
+			s, _ := ByID(tt.suite)
+			testWycheproofECDSA(t, "testdata/"+tt.file, s, tt.hash)
+		})
+	}
+}
+
+func testWycheproofECDSA(t *testing.T, path string, s *Suite, hash string) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,13 +276,12 @@ func TestWycheproofES256(t *testing.T) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		t.Fatal(err)
 	}
-	s, _ := ByID(2)
 	ran := 0
 	for _, g := range file.TestGroups {
-		if g.Sha != "SHA-256" {
+		if g.Sha != hash {
 			t.Fatalf("unexpected hash %s", g.Sha)
 		}
-		pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), unhex(t, g.PublicKey.Uncompressed))
+		pub, err := ecdsa.ParseUncompressedPublicKey(s.SignatureCurve(), unhex(t, g.PublicKey.Uncompressed))
 		if err != nil {
 			ran += len(g.Tests)
 			for _, tc := range g.Tests {

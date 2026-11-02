@@ -5,7 +5,6 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,7 +16,7 @@ import (
 	"github.com/aquilliam/edhoc/internal/suites"
 )
 
-var allSuites = []Suite{Suite0, Suite1, Suite2, Suite3, Suite6}
+var allSuites = []Suite{Suite0, Suite1, Suite2, Suite3, Suite6, Suite24}
 
 func trace1(t *testing.T) func(string) []byte {
 	t.Helper()
@@ -144,14 +143,12 @@ func party(t *testing.T, signs bool, suite Suite, kid byte) (any, Credential) {
 			t.Fatal(err)
 		}
 		key, pub = k, p
-	case signs && s.SigAlg == suites.AlgES256:
-		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	case signs:
+		k, err := ecdsa.GenerateKey(s.SignatureCurve(), rand.Reader)
 		if err != nil {
 			t.Fatal(err)
 		}
 		key, pub = k, &k.PublicKey
-	case signs:
-		t.Fatalf("no test key for signature algorithm %d", s.SigAlg)
 	default:
 		k, err := s.Curve.GenerateKey(rand.Reader)
 		if err != nil {
