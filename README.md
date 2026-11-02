@@ -1,5 +1,7 @@
 # edhoc
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16246/badge)](https://www.bestpractices.dev/projects/16246)
+
 A Go implementation of EDHOC, the Ephemeral Diffie-Hellman Over COSE key
 exchange defined in [RFC 9528](https://www.rfc-editor.org/rfc/rfc9528).
 
