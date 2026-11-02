@@ -101,8 +101,9 @@ func TestTrace2(t *testing.T) {
 	ts := newTrace2(t)
 	tr := ts.tr
 
-	// The Initiator first offers suite 6. This library does not implement
-	// suite 6, so the trace's message_1 is fed to the Responder as is.
+	// The Initiator first offers suite 6 alone, which the Responder does not
+	// support. The trace gives no private key for that message_1's G_X, so it
+	// is fed to the Responder as is.
 	first := unhex(t, "03 06 5820 741a13d7ba048fbb615e94386aa3b61bea5b3d8f65f32620b749bee8d278efa9 0e")
 	r, err := NewResponder(ts.cfgR)
 	if err != nil {
@@ -131,12 +132,12 @@ func TestTrace2(t *testing.T) {
 
 	// Second attempt, with SUITES_I = [6, 2].
 	cfgI := *ts.cfgI
+	cfgI.Suites = []Suite{Suite6, Suite2}
 	cfgI.PeerSuites = pe.Suites
 	i, err = NewInitiator(&cfgI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	i.suitesI = []Suite{6, 2}
 	i.h.eph = ephemeralKey(t, tr("X (Raw Value)"))
 	msg1, err := i.WriteMessage1()
 	check(t, "message_1", msg1, err, tr("message_1 (CBOR Sequence)"))
