@@ -19,6 +19,7 @@ import (
 	"math/big"
 
 	"github.com/aquilliam/edhoc/internal/ccm"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // COSE algorithm identifiers (RFC 9053).
@@ -27,6 +28,7 @@ const (
 	AlgA256GCM          = 3
 	AlgAESCCM16_64_128  = 10
 	AlgAESCCM16_128_128 = 30
+	AlgChaCha20Poly1305 = 24
 	AlgSHA256           = -16
 	AlgSHA384           = -43
 	AlgES256            = -7
@@ -158,6 +160,37 @@ var suite24 = &Suite{
 	AppKeySize: 32,
 }
 
+var suite4 = &Suite{
+	ID:         4,
+	KeySize:    chacha20poly1305.KeySize,
+	NonceSize:  chacha20poly1305.NonceSize,
+	TagSize:    chacha20poly1305.Overhead,
+	newAEAD:    chacha20poly1305.New,
+	Hash:       crypto.SHA256,
+	MACLength:  16,
+	Curve:      ecdh.X25519(),
+	SigAlg:     AlgEdDSA,
+	AppAEAD:    AlgChaCha20Poly1305,
+	AppHash:    AlgSHA256,
+	AppKeySize: chacha20poly1305.KeySize,
+}
+
+var suite5 = &Suite{
+	ID:         5,
+	KeySize:    chacha20poly1305.KeySize,
+	NonceSize:  chacha20poly1305.NonceSize,
+	TagSize:    chacha20poly1305.Overhead,
+	newAEAD:    chacha20poly1305.New,
+	Hash:       crypto.SHA256,
+	MACLength:  16,
+	Curve:      ecdh.P256(),
+	params:     p256,
+	SigAlg:     AlgES256,
+	AppAEAD:    AlgChaCha20Poly1305,
+	AppHash:    AlgSHA256,
+	AppKeySize: chacha20poly1305.KeySize,
+}
+
 // ByID returns the cipher suite with the given label, or false if it is not
 // supported.
 func ByID(id int) (*Suite, bool) {
@@ -170,6 +203,10 @@ func ByID(id int) (*Suite, bool) {
 		return suite2, true
 	case 3:
 		return suite3, true
+	case 4:
+		return suite4, true
+	case 5:
+		return suite5, true
 	case 6:
 		return suite6, true
 	case 24:

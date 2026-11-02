@@ -34,12 +34,14 @@ type Suite int
 // comment after each lists the EDHOC AEAD and hash algorithms, the MAC length
 // for static DH authentication, and the key exchange and signature
 // algorithms. Suites 0 to 3 use AES-CCM-16-64-128 and SHA-256 for the
-// application; suites 6 and 24 use their own EDHOC AEAD and hash.
+// application; the others use their own EDHOC AEAD and hash.
 const (
 	Suite0  Suite = 0  // AES-CCM-16-64-128, SHA-256, 8, X25519, EdDSA
 	Suite1  Suite = 1  // AES-CCM-16-128-128, SHA-256, 16, X25519, EdDSA
 	Suite2  Suite = 2  // AES-CCM-16-64-128, SHA-256, 8, P-256, ES256
 	Suite3  Suite = 3  // AES-CCM-16-128-128, SHA-256, 16, P-256, ES256
+	Suite4  Suite = 4  // ChaCha20/Poly1305, SHA-256, 16, X25519, EdDSA
+	Suite5  Suite = 5  // ChaCha20/Poly1305, SHA-256, 16, P-256, ES256
 	Suite6  Suite = 6  // A128GCM, SHA-256, 16, X25519, ES256
 	Suite24 Suite = 24 // A256GCM, SHA-384, 16, P-384, ES384
 )

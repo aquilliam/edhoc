@@ -10,7 +10,7 @@ EDHOC messages as bytes and returns bytes to send.
 
 ## Status
 
-Early. Methods 0–3 with cipher suites 0 to 3, 6 and 24 work, and both RFC 9529 traces
+Early. Methods 0–3 with cipher suites 0 to 6 and 24 work, and both RFC 9529 traces
 are reproduced byte for byte; the rest of the RFC is still to come. Expect
 breaking changes until v1.0.
 
@@ -31,9 +31,11 @@ breaking changes until v1.0.
 | Cipher suite 1 (AES-CCM-16-128-128, SHA-256, X25519, EdDSA) | yes |
 | Cipher suite 2 (AES-CCM-16-64-128, SHA-256, P-256, ES256) | yes |
 | Cipher suite 3 (AES-CCM-16-128-128, SHA-256, P-256, ES256) | yes |
+| Cipher suite 4 (ChaCha20/Poly1305, SHA-256, X25519, EdDSA) | yes |
+| Cipher suite 5 (ChaCha20/Poly1305, SHA-256, P-256, ES256) | yes |
 | Cipher suite 6 (A128GCM, SHA-256, X25519, ES256) | yes |
 | Cipher suite 24 (A256GCM, SHA-384, P-384, ES384) | yes |
-| Other cipher suites | planned |
+| Cipher suite 25 (X448, SHAKE256) | not planned until Go has X448 and Ed448 |
 | Methods 0–3 (signature and static DH keys, in any combination) | yes |
 | message_4, EAD, error messages, cipher suite negotiation | yes |
 | EDHOC_Exporter, EDHOC_KeyUpdate, OSCORE parameters | yes |
