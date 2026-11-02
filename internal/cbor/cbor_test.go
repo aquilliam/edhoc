@@ -207,6 +207,35 @@ func TestRaw(t *testing.T) {
 	}
 }
 
+func TestRawHeaderMap(t *testing.T) {
+	for _, in := range []string{"a1044132", "a2044132011818", "a2011818044132", "a0"} {
+		data := unhex(t, in)
+		got, err := NewDecoder(data).RawHeaderMap()
+		if err != nil || !bytes.Equal(got, data) {
+			t.Errorf("RawHeaderMap(%s) = %x, %v", in, got, err)
+		}
+	}
+	tests := []struct {
+		in   string
+		want error
+	}{
+		{"a2 04 41 32 04 41 33", ErrMalformed},
+		{"a1 04 a2 03 04 01 02", ErrNotDeterministic},
+		{"a1 1900 04 41 32", ErrNotDeterministic},
+		{"8104", ErrType},
+		{"a1 04", ErrMalformed},
+	}
+	for _, tt := range tests {
+		d := NewDecoder(unhex(t, removeSpaces(tt.in)))
+		if _, err := d.RawHeaderMap(); !errors.Is(err, tt.want) {
+			t.Errorf("RawHeaderMap(%s) error = %v, want %v", tt.in, err, tt.want)
+		}
+		if d.off != 0 {
+			t.Errorf("RawHeaderMap(%s) advanced the decoder after an error", tt.in)
+		}
+	}
+}
+
 func TestID(t *testing.T) {
 	tests := []struct {
 		id   string

@@ -328,6 +328,45 @@ func (d *Decoder) Raw() ([]byte, error) {
 	return d.data[start:d.off], nil
 }
 
+// maxHeaderMapSize limits the number of entries RawHeaderMap accepts.
+const maxHeaderMapSize = 32
+
+// RawHeaderMap reads a map and returns its encoding. Unlike Raw, it accepts
+// the keys in any order, as RFC 9528, Section 3.5.3 allows for ID_CRED fields,
+// but still rejects repeated keys. Keys and values must be deterministically
+// encoded.
+func (d *Decoder) RawHeaderMap() ([]byte, error) {
+	start := d.off
+	n, err := d.Map()
+	if err != nil {
+		return nil, err
+	}
+	if n > maxHeaderMapSize {
+		d.off = start
+		return nil, ErrUnsupported
+	}
+	keys := make([][]byte, 0, n)
+	for range n {
+		k, err := d.Raw()
+		if err != nil {
+			d.off = start
+			return nil, err
+		}
+		for _, prev := range keys {
+			if bytes.Equal(prev, k) {
+				d.off = start
+				return nil, ErrMalformed
+			}
+		}
+		keys = append(keys, k)
+		if _, err := d.Raw(); err != nil {
+			d.off = start
+			return nil, err
+		}
+	}
+	return d.data[start:d.off], nil
+}
+
 func (d *Decoder) skip(depth int) error {
 	if depth > maxDepth {
 		return ErrUnsupported
