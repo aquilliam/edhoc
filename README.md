@@ -1,6 +1,7 @@
 # edhoc
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/aquilliam/edhoc.svg)](https://pkg.go.dev/github.com/aquilliam/edhoc)
+[![codecov](https://codecov.io/gh/aquilliam/edhoc/graph/badge.svg)](https://codecov.io/gh/aquilliam/edhoc)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16246/badge)](https://www.bestpractices.dev/projects/16246)
 
 A Go implementation of EDHOC ([RFC 9528](https://www.rfc-editor.org/rfc/rfc9528)),
