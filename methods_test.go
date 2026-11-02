@@ -62,22 +62,20 @@ func TestTrace1(t *testing.T) {
 	i, err := NewInitiator(&Config{
 		Method:         MethodSignSign,
 		Suites:         []Suite{Suite0},
-		ConnID:         tr("C_I (Raw Value)"),
 		Credential:     credI,
 		Key:            ed25519.NewKeyFromSeed(tr("SK_I (Raw Value)")),
 		PeerCredential: lookup(credR),
-	})
+	}, tr("C_I (Raw Value)"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	r, err := NewResponder(&Config{
 		Method:         MethodSignSign,
 		Suites:         []Suite{Suite0},
-		ConnID:         tr("C_R (Raw Value)"),
 		Credential:     credR,
 		Key:            ed25519.NewKeyFromSeed(tr("SK_R (Raw Value)")),
 		PeerCredential: lookup(credI),
-	})
+	}, tr("C_R (Raw Value)"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,16 +176,16 @@ func TestMethodsAndSuites(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				cfgI := &Config{Method: m, Suites: []Suite{suite}, ConnID: []byte{0x0e},
+				cfgI := &Config{Method: m, Suites: []Suite{suite},
 					Credential: credI, Key: keyI, PeerCredential: lookup(parsedR)}
-				cfgR := &Config{Method: m, Suites: []Suite{suite}, ConnID: []byte{0x07},
+				cfgR := &Config{Method: m, Suites: []Suite{suite},
 					Credential: credR, Key: keyR, PeerCredential: lookup(parsedI)}
 				newSides := func() (*Initiator, *Responder) {
-					i, err := NewInitiator(cfgI)
+					i, err := NewInitiator(cfgI, pairCI)
 					if err != nil {
 						t.Fatal(err)
 					}
-					r, err := NewResponder(cfgR)
+					r, err := NewResponder(cfgR, pairCR)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -234,14 +232,14 @@ func TestMethodsAndSuites(t *testing.T) {
 func TestWrongKeyType(t *testing.T) {
 	keyI, credI := party(t, true, Suite2, 0x01)
 	keyR, credR := party(t, false, Suite2, 0x02)
-	cfg := &Config{Method: MethodStaticStatic, Suites: []Suite{Suite2}, ConnID: []byte{1},
+	cfg := &Config{Method: MethodStaticStatic, Suites: []Suite{Suite2},
 		Credential: credI, Key: keyI, PeerCredential: lookup(credR)}
-	if _, err := NewInitiator(cfg); err == nil {
+	if _, err := NewInitiator(cfg, pairCI); err == nil {
 		t.Fatal("NewInitiator accepted a signing key for static DH")
 	}
-	cfg = &Config{Method: MethodSignSign, Suites: []Suite{Suite2}, ConnID: []byte{1},
+	cfg = &Config{Method: MethodSignSign, Suites: []Suite{Suite2},
 		Credential: credR, Key: keyR, PeerCredential: lookup(credI)}
-	if _, err := NewResponder(cfg); err == nil {
+	if _, err := NewResponder(cfg, pairCR); err == nil {
 		t.Fatal("NewResponder accepted a DH key for signing")
 	}
 }
@@ -250,15 +248,15 @@ func TestWrongKeyType(t *testing.T) {
 // in ID_CRED and the peer builds the Credential from it.
 func TestCredentialsByValue(t *testing.T) {
 	tr := trace1(t)
-	fromX5Chain := func(id IDCred) (Credential, error) {
-		chain, ok := id.X5Chain()
+	fromX5Chain := func(p *PeerInfo) (Credential, error) {
+		chain, ok := p.ID.X5Chain()
 		if !ok {
 			return Credential{}, ErrUnknownCredential
 		}
 		return NewX509(chain[0])
 	}
-	fromKCCS := func(id IDCred) (Credential, error) {
-		ccs, ok := id.KCCS()
+	fromKCCS := func(p *PeerInfo) (Credential, error) {
+		ccs, ok := p.ID.KCCS()
 		if !ok {
 			return Credential{}, ErrUnknownCredential
 		}
@@ -286,14 +284,14 @@ func TestCredentialsByValue(t *testing.T) {
 }
 
 func testByValue(t *testing.T, suite Suite, m Method, credI Credential, keyI any, credR Credential, keyR any,
-	peer func(IDCred) (Credential, error)) {
-	i, err := NewInitiator(&Config{Method: m, Suites: []Suite{suite}, ConnID: []byte{0x0e},
-		Credential: credI, Key: keyI, PeerCredential: peer})
+	peer func(*PeerInfo) (Credential, error)) {
+	i, err := NewInitiator(&Config{Method: m, Suites: []Suite{suite},
+		Credential: credI, Key: keyI, PeerCredential: peer}, pairCI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewResponder(&Config{Method: m, Suites: []Suite{suite}, ConnID: []byte{0x07},
-		Credential: credR, Key: keyR, PeerCredential: peer})
+	r, err := NewResponder(&Config{Method: m, Suites: []Suite{suite},
+		Credential: credR, Key: keyR, PeerCredential: peer}, pairCR)
 	if err != nil {
 		t.Fatal(err)
 	}

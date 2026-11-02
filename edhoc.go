@@ -61,9 +61,24 @@ type EAD struct {
 	Value []byte
 }
 
-// Config configures one side of an EDHOC session. A Config may be shared by
-// several sessions but must not be changed once it has been passed to
-// NewInitiator or NewResponder.
+// PeerInfo is what Config.PeerCredential is told about the peer and the
+// session.
+type PeerInfo struct {
+	// ID is the ID_CRED field the peer sent: ID_CRED_R in message_2 or
+	// ID_CRED_I in message_3.
+	ID IDCred
+
+	// EAD holds the EAD items sent in the same message, without padding.
+	EAD []EAD
+
+	// ConnID is this side's connection identifier and PeerConnID the peer's.
+	ConnID, PeerConnID []byte
+}
+
+// Config configures one side of EDHOC sessions. A Config may be shared by
+// any number of sessions but must not be changed once it has been passed to
+// NewInitiator or NewResponder. Values that differ between sessions, such as
+// the connection identifier, are passed to NewInitiator and NewResponder.
 type Config struct {
 	// Method is the authentication method. Both sides must use the same one.
 	Method Method
@@ -72,32 +87,24 @@ type Config struct {
 	// is its order of preference, most preferred first.
 	Suites []Suite
 
-	// PeerSuites is SUITES_R from an error message the Responder sent in
-	// reply to an earlier message_1. The Initiator then selects its most
-	// preferred suite among them. Responders ignore it.
-	PeerSuites []Suite
-
-	// ConnID is this side's connection identifier: C_I for the Initiator,
-	// C_R for the Responder. It is also this side's OSCORE Recipient ID, so
-	// a session fails if both sides pick the same one.
-	ConnID []byte
-
 	// Credential is this side's authentication credential, CRED_I or CRED_R.
 	Credential Credential
 
 	// Key is the private authentication key matching Credential: a
 	// crypto.Signer if this side authenticates with a signature, a DHKey if
 	// it uses static DH. Signing keys are ed25519.PrivateKey for EdDSA and
-	// *ecdsa.PrivateKey on P-256 for ES256, or anything else that implements
-	// crypto.Signer with those public keys, such as a key in a KMS.
+	// *ecdsa.PrivateKey on P-256 for ES256 or on P-384 for ES384, or anything
+	// else that implements crypto.Signer with those public keys, such as a key
+	// in a KMS. Static DH keys must be on the curve of the selected suite.
 	Key any
 
-	// PeerCredential looks up the peer's credential from the ID_CRED field
-	// it sent. It is called during ReadMessage2 on the Initiator and
+	// PeerCredential returns the peer's credential for the ID_CRED field it
+	// sent, or an error wrapping ErrUnknownCredential if there is no such
+	// credential. It is called during ReadMessage2 on the Initiator and
 	// ReadMessage3 on the Responder, before the peer has been authenticated,
-	// so it must not treat the identifier as proof of anything. Return an
-	// error wrapping ErrUnknownCredential if there is no such credential.
-	PeerCredential func(id IDCred) (Credential, error)
+	// so nothing in p is proof of anything. The returned credential is the one
+	// the peer must then prove it holds the key for.
+	PeerCredential func(p *PeerInfo) (Credential, error)
 
 	// EADLabels lists the absolute values of the EAD labels the application
 	// handles. A received critical EAD item with any other label fails the
@@ -129,7 +136,7 @@ func (c *Config) check(initiator bool) error {
 	if len(c.Credential.Raw) == 0 {
 		return errors.New("edhoc: Credential.Raw is empty")
 	}
-	if c.Credential.ID.raw == nil {
+	if c.Credential.ID.raw == "" {
 		return errors.New("edhoc: Credential.ID is not set")
 	}
 	signs := c.Method.initiatorSigns()

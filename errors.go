@@ -54,7 +54,7 @@ type PeerError struct {
 	// Info is the diagnostic text sent with ErrCodeUnspecified.
 	Info string
 	// Suites is SUITES_R, sent with ErrCodeWrongSelectedSuite. Use it as
-	// Config.PeerSuites when starting the next session.
+	// the peerSuites argument of NewInitiator when starting the next session.
 	Suites []Suite
 }
 

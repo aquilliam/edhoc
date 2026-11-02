@@ -29,35 +29,35 @@ func Example() {
 	keyR, credR := rawPublicKey(0x02)
 
 	// Each side knows the other's credential in advance and looks it up by
-	// the kid it is sent.
-	knows := func(c edhoc.Credential) func(edhoc.IDCred) (edhoc.Credential, error) {
-		return func(id edhoc.IDCred) (edhoc.Credential, error) {
-			if !id.Equal(c.ID) {
-				return edhoc.Credential{}, edhoc.ErrUnknownCredential
-			}
-			return c, nil
+	// the ID_CRED it is sent.
+	known := map[edhoc.IDCred]edhoc.Credential{credI.ID: credI, credR.ID: credR}
+	lookUp := func(p *edhoc.PeerInfo) (edhoc.Credential, error) {
+		c, ok := known[p.ID]
+		if !ok {
+			return edhoc.Credential{}, edhoc.ErrUnknownCredential
 		}
+		return c, nil
 	}
 
+	// A Config can be shared by all sessions on one side. The connection
+	// identifier is chosen per session.
 	initiator, err := edhoc.NewInitiator(&edhoc.Config{
 		Method:         edhoc.MethodStaticStatic,
 		Suites:         []edhoc.Suite{edhoc.Suite2},
-		ConnID:         []byte{0x37},
 		Credential:     credI,
 		Key:            keyI,
-		PeerCredential: knows(credR),
-	})
+		PeerCredential: lookUp,
+	}, []byte{0x37})
 	if err != nil {
 		log.Fatal(err)
 	}
 	responder, err := edhoc.NewResponder(&edhoc.Config{
 		Method:         edhoc.MethodStaticStatic,
 		Suites:         []edhoc.Suite{edhoc.Suite2},
-		ConnID:         []byte{0x27},
 		Credential:     credR,
 		Key:            keyR,
-		PeerCredential: knows(credI),
-	})
+		PeerCredential: lookUp,
+	}, []byte{0x27})
 	if err != nil {
 		log.Fatal(err)
 	}

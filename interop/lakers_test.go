@@ -92,12 +92,12 @@ func credential(t *testing.T, raw []byte, byValue bool) edhoc.Credential {
 
 // lookup accepts the peer's credential by kid or by value, as long as it is
 // the expected one.
-func lookup(want edhoc.Credential) func(edhoc.IDCred) (edhoc.Credential, error) {
-	return func(id edhoc.IDCred) (edhoc.Credential, error) {
-		if ccs, ok := id.KCCS(); ok && bytes.Equal(ccs, want.Raw) {
+func lookup(want edhoc.Credential) func(*edhoc.PeerInfo) (edhoc.Credential, error) {
+	return func(p *edhoc.PeerInfo) (edhoc.Credential, error) {
+		if ccs, ok := p.ID.KCCS(); ok && bytes.Equal(ccs, want.Raw) {
 			return want, nil
 		}
-		if kid, ok := id.KeyID(); ok {
+		if kid, ok := p.ID.KeyID(); ok {
 			if wantKID, _ := want.ID.KeyID(); bytes.Equal(kid, wantKID) {
 				return want, nil
 			}
@@ -139,7 +139,6 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 	cfg := &edhoc.Config{
 		Method:         edhoc.MethodStaticStatic,
 		Suites:         []edhoc.Suite{edhoc.Suite2},
-		ConnID:         []byte{0x05},
 		Credential:     own,
 		Key:            key,
 		PeerCredential: lookup(peerCred),
@@ -148,7 +147,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 
 	var s *edhoc.Session
 	if goInitiates {
-		i, err := edhoc.NewInitiator(cfg)
+		i, err := edhoc.NewInitiator(cfg, []byte{0x05})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +172,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 			t.Fatal(err)
 		}
 	} else {
-		r, err := edhoc.NewResponder(cfg)
+		r, err := edhoc.NewResponder(cfg, []byte{0x05})
 		if err != nil {
 			t.Fatal(err)
 		}

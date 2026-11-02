@@ -3,6 +3,7 @@ package edhoc
 import (
 	"bytes"
 	"errors"
+	"sync"
 
 	"github.com/aquilliam/edhoc/internal/suites"
 )
@@ -21,7 +22,10 @@ const labelKeyUpdate = 11
 // The Initiator should not store the session or its keys, or send protected
 // application data, until it has received message_4 or a message protected
 // with a derived key from the Responder (RFC 9528, Section 5.4.2).
+//
+// A Session is safe for concurrent use.
 type Session struct {
+	mu          sync.RWMutex
 	suite       *suites.Suite
 	initiator   bool
 	prkOut      []byte
@@ -43,6 +47,12 @@ func (s *Session) setPRKOut(prkOut []byte) error {
 // (EDHOC_Exporter, RFC 9528, Section 4.2.1). The pair of label and context
 // must not be used for two different purposes.
 func (s *Session) Exporter(label int, context []byte, length int) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.exporter(label, context, length)
+}
+
+func (s *Session) exporter(label int, context []byte, length int) ([]byte, error) {
 	if label < 0 {
 		return nil, errors.New("edhoc: exporter label must not be negative")
 	}
@@ -54,6 +64,8 @@ func (s *Session) Exporter(label int, context []byte, length int) ([]byte, error
 // context. Keys exported before the update stay valid until the application
 // deletes them, which it should do as soon as they are no longer needed.
 func (s *Session) KeyUpdate(context []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	prkOut, err := kdf(s.suite, s.prkOut, labelKeyUpdate, context, s.suite.HashLength())
 	if err != nil {
 		return err
@@ -87,11 +99,13 @@ type OSCOREContext struct {
 // application AEAD key and an 8-byte Master Salt. Use Exporter with labels 0
 // and 1 if the application has agreed on other lengths.
 func (s *Session) OSCORE() (*OSCOREContext, error) {
-	secret, err := s.Exporter(exporterOSCOREMasterSecret, nil, s.suite.AppKeySize)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	secret, err := s.exporter(exporterOSCOREMasterSecret, nil, s.suite.AppKeySize)
 	if err != nil {
 		return nil, err
 	}
-	salt, err := s.Exporter(exporterOSCOREMasterSalt, nil, 8)
+	salt, err := s.exporter(exporterOSCOREMasterSalt, nil, 8)
 	if err != nil {
 		return nil, err
 	}

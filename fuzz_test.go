@@ -16,7 +16,7 @@ func FuzzMessage1(f *testing.F) {
 	f.Add(fs.msg1)
 	f.Add(unhex(f, "03 06 5820 741a13d7ba048fbb615e94386aa3b61bea5b3d8f65f32620b749bee8d278efa9 0e"))
 	f.Fuzz(func(t *testing.T, msg []byte) {
-		r, err := NewResponder(fs.cfgR)
+		r, err := NewResponder(fs.cfgR, fs.cR)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -34,6 +34,7 @@ func FuzzMessage1(f *testing.F) {
 // fuzzing starts.
 type fuzzSetup struct {
 	cfgI, cfgR   *Config
+	cI, cR       []byte
 	x, y         []byte
 	msg1, msg2   []byte
 	gY, pt2, pt3 []byte
@@ -44,10 +45,11 @@ func newFuzzSetup(f *testing.F) *fuzzSetup {
 	ts := newTrace2(f)
 	cfgI := *ts.cfgI
 	cfgI.Suites = []Suite{Suite6, Suite2}
-	cfgI.PeerSuites = []Suite{Suite2}
 	return &fuzzSetup{
 		cfgI:   &cfgI,
 		cfgR:   ts.cfgR,
+		cI:     ts.cI,
+		cR:     ts.cR,
 		x:      ts.tr("X (Raw Value)"),
 		y:      ts.tr("Y (Raw Value)"),
 		msg1:   ts.tr("message_1 (CBOR Sequence)"),
@@ -62,7 +64,7 @@ func newFuzzSetup(f *testing.F) *fuzzSetup {
 
 // initiator returns the trace 2 Initiator after message_1.
 func (fs *fuzzSetup) initiator(t *testing.T) *Initiator {
-	i, err := NewInitiator(fs.cfgI)
+	i, err := NewInitiator(fs.cfgI, fs.cI, Suite2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +77,7 @@ func (fs *fuzzSetup) initiator(t *testing.T) *Initiator {
 
 // responder returns the trace 2 Responder after message_2.
 func (fs *fuzzSetup) responder(t *testing.T) *Responder {
-	r, err := NewResponder(fs.cfgR)
+	r, err := NewResponder(fs.cfgR, fs.cR)
 	if err != nil {
 		t.Fatal(err)
 	}

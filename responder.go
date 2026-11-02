@@ -29,12 +29,16 @@ type Responder struct {
 	session *Session
 }
 
-// NewResponder returns a Responder for a new session.
-func NewResponder(cfg *Config) (*Responder, error) {
+// NewResponder returns a Responder for a new session. connID is C_R, this
+// side's connection identifier. The Initiator puts C_R in front of message_3
+// when EDHOC runs over CoAP, so a server uses it to find the Responder for a
+// message_3. It is also this side's OSCORE Recipient ID. Either way it must
+// differ from that of any other active session.
+func NewResponder(cfg *Config, connID []byte) (*Responder, error) {
 	if err := cfg.check(false); err != nil {
 		return nil, err
 	}
-	return &Responder{h: handshake{cfg: cfg, cR: bytes.Clone(cfg.ConnID)}}, nil
+	return &Responder{h: handshake{cfg: cfg, cR: bytes.Clone(connID)}}, nil
 }
 
 func (r *Responder) fail(err error) error {

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aquilliam/edhoc/internal/cbor"
@@ -24,10 +25,10 @@ func unhex(t testing.TB, s string) []byte {
 }
 
 // lookup returns a PeerCredential function that knows the given credentials.
-func lookup(creds ...Credential) func(IDCred) (Credential, error) {
-	return func(id IDCred) (Credential, error) {
+func lookup(creds ...Credential) func(*PeerInfo) (Credential, error) {
+	return func(p *PeerInfo) (Credential, error) {
 		for _, c := range creds {
-			if c.ID.Equal(id) {
+			if c.ID == p.ID {
 				return c, nil
 			}
 		}
@@ -39,6 +40,7 @@ type traceSetup struct {
 	tr           func(string) []byte
 	credI, credR Credential
 	cfgI, cfgR   *Config
+	cI, cR       []byte
 }
 
 // newTrace2 sets up both sides with the keys and credentials of RFC 9529,
@@ -65,12 +67,13 @@ func newTrace2(t testing.TB) *traceSetup {
 	}
 	return &traceSetup{
 		tr:    tr,
+		cI:    tr("C_I (Raw Value)"),
+		cR:    tr("C_R (raw value)"),
 		credI: credI,
 		credR: credR,
 		cfgI: &Config{
 			Method:         MethodStaticStatic,
 			Suites:         []Suite{Suite2},
-			ConnID:         tr("C_I (Raw Value)"),
 			Credential:     credI,
 			Key:            skI,
 			PeerCredential: lookup(credR),
@@ -78,7 +81,6 @@ func newTrace2(t testing.TB) *traceSetup {
 		cfgR: &Config{
 			Method:         MethodStaticStatic,
 			Suites:         []Suite{Suite2},
-			ConnID:         tr("C_R (raw value)"),
 			Credential:     credR,
 			Key:            skR,
 			PeerCredential: lookup(credI),
@@ -105,7 +107,7 @@ func TestTrace2(t *testing.T) {
 	// support. The trace gives no private key for that message_1's G_X, so it
 	// is fed to the Responder as is.
 	first := unhex(t, "03 06 5820 741a13d7ba048fbb615e94386aa3b61bea5b3d8f65f32620b749bee8d278efa9 0e")
-	r, err := NewResponder(ts.cfgR)
+	r, err := NewResponder(ts.cfgR, ts.cR)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +119,7 @@ func TestTrace2(t *testing.T) {
 	check(t, "error", ErrorMessage(err), nil, tr("error (CBOR Sequence)"))
 
 	// The Initiator receives the error.
-	i, err := NewInitiator(ts.cfgI)
+	i, err := NewInitiator(ts.cfgI, ts.cI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +135,7 @@ func TestTrace2(t *testing.T) {
 	// Second attempt, with SUITES_I = [6, 2].
 	cfgI := *ts.cfgI
 	cfgI.Suites = []Suite{Suite6, Suite2}
-	cfgI.PeerSuites = pe.Suites
-	i, err = NewInitiator(&cfgI)
+	i, err = NewInitiator(&cfgI, ts.cI, pe.Suites...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +143,7 @@ func TestTrace2(t *testing.T) {
 	msg1, err := i.WriteMessage1()
 	check(t, "message_1", msg1, err, tr("message_1 (CBOR Sequence)"))
 
-	r, err = NewResponder(ts.cfgR)
+	r, err = NewResponder(ts.cfgR, ts.cR)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +233,6 @@ func newPair(t *testing.T) (*Initiator, *Responder, *Config, *Config) {
 	cfgI := &Config{
 		Method:         MethodStaticStatic,
 		Suites:         []Suite{Suite2},
-		ConnID:         []byte{0x0e},
 		Credential:     credI,
 		Key:            keyI,
 		PeerCredential: lookup(credR),
@@ -240,21 +240,23 @@ func newPair(t *testing.T) (*Initiator, *Responder, *Config, *Config) {
 	cfgR := &Config{
 		Method:         MethodStaticStatic,
 		Suites:         []Suite{Suite2},
-		ConnID:         []byte{0xab, 0xcd},
 		Credential:     credR,
 		Key:            keyR,
 		PeerCredential: lookup(credI),
 	}
-	i, err := NewInitiator(cfgI)
+	i, err := NewInitiator(cfgI, pairCI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewResponder(cfgR)
+	r, err := NewResponder(cfgR, pairCR)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return i, r, cfgI, cfgR
 }
+
+// The connection identifiers newPair uses.
+var pairCI, pairCR = []byte{0x0e}, []byte{0xab, 0xcd}
 
 func run(t *testing.T, i *Initiator, r *Responder, ead1, ead2, ead3, ead4 []EAD) error {
 	t.Helper()
@@ -385,8 +387,7 @@ func TestUnknownCredential(t *testing.T) {
 
 func TestSameConnectionIDs(t *testing.T) {
 	i, _, _, cfgR := newPair(t)
-	cfgR.ConnID = []byte{0x0e}
-	r, err := NewResponder(cfgR)
+	r, err := NewResponder(cfgR, pairCI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +496,7 @@ func TestInvalidMessage1(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, err := NewResponder(ts.cfgR)
+			r, err := NewResponder(ts.cfgR, ts.cR)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -536,12 +537,11 @@ func TestInvalidMessage2(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfgI := *ts.cfgI
-			cfgI.PeerSuites = []Suite{Suite2}
-			i, err := NewInitiator(&cfgI)
+			cfgI.Suites = []Suite{Suite6, Suite2}
+			i, err := NewInitiator(&cfgI, ts.cI, Suite2)
 			if err != nil {
 				t.Fatal(err)
 			}
-			i.suitesI = []Suite{6, 2}
 			i.h.eph = ephemeralKey(t, tr("X (Raw Value)"))
 			if _, err := i.WriteMessage1(); err != nil {
 				t.Fatal(err)
@@ -604,16 +604,76 @@ func TestConfigChecks(t *testing.T) {
 	for _, tt := range tests {
 		c := *base
 		tt.edit(&c)
-		if _, err := NewInitiator(&c); err == nil {
+		if _, err := NewInitiator(&c, pairCI); err == nil {
 			t.Errorf("%s: NewInitiator accepted the config", tt.name)
 		}
-		if _, err := NewResponder(&c); err == nil {
+		if _, err := NewResponder(&c, pairCR); err == nil {
 			t.Errorf("%s: NewResponder accepted the config", tt.name)
 		}
 	}
 	c := *base
-	c.PeerSuites = []Suite{0}
-	if _, err := NewInitiator(&c); err == nil {
-		t.Error("NewInitiator accepted PeerSuites with no suite in common")
+	if _, err := NewInitiator(&c, pairCI, Suite0); err == nil {
+		t.Error("NewInitiator accepted peer suites with no suite in common")
 	}
+}
+
+func TestPeerInfo(t *testing.T) {
+	i, r, cfgI, cfgR := newPair(t)
+	var gotI, gotR *PeerInfo
+	wrap := func(f func(*PeerInfo) (Credential, error), got **PeerInfo) func(*PeerInfo) (Credential, error) {
+		return func(p *PeerInfo) (Credential, error) {
+			*got = p
+			return f(p)
+		}
+	}
+	cfgI.PeerCredential = wrap(cfgI.PeerCredential, &gotI)
+	cfgR.PeerCredential = wrap(cfgR.PeerCredential, &gotR)
+	ead2 := []EAD{{Label: 0}, {Label: 7, Value: []byte("two")}}
+	ead3 := []EAD{{Label: 9, Value: []byte("three")}}
+	if err := run(t, i, r, nil, ead2, ead3, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name         string
+		got          *PeerInfo
+		id           IDCred
+		ead          []EAD
+		own, peerCID []byte
+	}{
+		{"Initiator", gotI, cfgR.Credential.ID, ead2[1:], pairCI, pairCR},
+		{"Responder", gotR, cfgI.Credential.ID, ead3, pairCR, pairCI},
+	} {
+		if c.got == nil {
+			t.Fatalf("%s: PeerCredential was not called", c.name)
+		}
+		if c.got.ID != c.id || !bytes.Equal(c.got.ConnID, c.own) || !bytes.Equal(c.got.PeerConnID, c.peerCID) {
+			t.Errorf("%s: PeerInfo = %+v", c.name, c.got)
+		}
+		if len(c.got.EAD) != len(c.ead) || c.got.EAD[0].Label != c.ead[0].Label || !bytes.Equal(c.got.EAD[0].Value, c.ead[0].Value) {
+			t.Errorf("%s: PeerInfo.EAD = %+v, want %+v", c.name, c.got.EAD, c.ead)
+		}
+	}
+}
+
+func TestSessionConcurrentUse(t *testing.T) {
+	i, r, _, _ := newPair(t)
+	if err := run(t, i, r, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := i.Session()
+	var wg sync.WaitGroup
+	for n := range 8 {
+		wg.Go(func() {
+			if n%2 == 0 {
+				if err := s.KeyUpdate([]byte{byte(n)}); err != nil {
+					t.Error(err)
+				}
+				return
+			}
+			if _, err := s.OSCORE(); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
 }

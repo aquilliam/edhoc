@@ -75,8 +75,13 @@ func (h *handshake) signer() crypto.Signer {
 // lookupPeer asks the application for the peer's credential and returns the
 // authentication key in it: a signature key if the peer signs, otherwise a
 // static DH key.
-func (h *handshake) lookupPeer(id IDCred, peerSigns bool) (crypto.PublicKey, error) {
-	cred, err := h.cfg.PeerCredential(id)
+func (h *handshake) lookupPeer(id IDCred, ead []EAD, ownConnID, peerConnID []byte, peerSigns bool) (crypto.PublicKey, error) {
+	cred, err := h.cfg.PeerCredential(&PeerInfo{
+		ID:         id,
+		EAD:        ead,
+		ConnID:     bytes.Clone(ownConnID),
+		PeerConnID: bytes.Clone(peerConnID),
+	})
 	if errors.Is(err, ErrUnknownCredential) {
 		return nil, &Error{Code: ErrCodeUnknownCredential, msg: "looking up the peer credential", err: err}
 	}
@@ -155,7 +160,7 @@ func (h *handshake) mac2(idCredR IDCred, credR, ead []byte) ([]byte, error) {
 
 // mac3 computes MAC_3 with context_3 = << ID_CRED_I, TH_3, CRED_I, ? EAD_3 >>.
 func (h *handshake) mac3(idCredI IDCred, credI, ead []byte) ([]byte, error) {
-	ctx := append([]byte{}, idCredI.raw...)
+	ctx := []byte(idCredI.raw)
 	ctx = cbor.AppendBytes(ctx, h.th3)
 	ctx = append(ctx, credI...)
 	ctx = append(ctx, ead...)
@@ -173,7 +178,7 @@ func toBeSigned(idCred IDCred, th, cred, ead, mac []byte) []byte {
 	aad = append(aad, ead...)
 	b := cbor.AppendArray(nil, 4)
 	b = cbor.AppendText(b, "Signature1")
-	b = cbor.AppendBytes(b, idCred.raw)
+	b = cbor.AppendBytes(b, []byte(idCred.raw))
 	b = cbor.AppendBytes(b, aad)
 	return cbor.AppendBytes(b, mac)
 }

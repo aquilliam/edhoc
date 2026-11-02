@@ -51,14 +51,14 @@ breaking changes until v1.0.
 See [example_test.go](example_test.go) for a complete handshake. In short:
 
 ```go
-initiator, err := edhoc.NewInitiator(&edhoc.Config{
+cfg := &edhoc.Config{
 	Method:         edhoc.MethodStaticStatic,
 	Suites:         []edhoc.Suite{edhoc.Suite2},
-	ConnID:         []byte{0x37},
 	Credential:     myCredential,
 	Key:            myKey,
-	PeerCredential: lookUpPeer,
-})
+	PeerCredential: lookUpPeer, // func(*edhoc.PeerInfo) (edhoc.Credential, error)
+}
+initiator, err := edhoc.NewInitiator(cfg, []byte{0x37}) // C_I for this session
 msg1, err := initiator.WriteMessage1()
 // send msg1, receive msg2
 err = initiator.ReadMessage2(msg2)

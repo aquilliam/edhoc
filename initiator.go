@@ -30,15 +30,24 @@ type Initiator struct {
 	session *Session
 }
 
-// NewInitiator returns an Initiator for a new session.
-func NewInitiator(cfg *Config) (*Initiator, error) {
+// NewInitiator returns an Initiator for a new session. connID is C_I, this
+// side's connection identifier. It is also this side's OSCORE Recipient ID, so
+// it must differ from that of any other active session using the same OSCORE
+// endpoint.
+//
+// The Initiator offers its most preferred suite from cfg.Suites. To start
+// again after the Responder rejected that choice, pass the suites from the
+// *PeerError as peerSuites; the Initiator then selects its most preferred
+// suite among them. peerSuites can also be suites known in advance to be
+// supported by the Responder.
+func NewInitiator(cfg *Config, connID []byte, peerSuites ...Suite) (*Initiator, error) {
 	if err := cfg.check(true); err != nil {
 		return nil, err
 	}
 	i := 0
-	if len(cfg.PeerSuites) > 0 {
+	if len(peerSuites) > 0 {
 		i = slices.IndexFunc(cfg.Suites, func(s Suite) bool {
-			return slices.Contains(cfg.PeerSuites, s)
+			return slices.Contains(peerSuites, s)
 		})
 		if i < 0 {
 			return nil, errors.New("edhoc: no cipher suite in common with the Responder")
@@ -49,7 +58,7 @@ func NewInitiator(cfg *Config) (*Initiator, error) {
 		h: handshake{
 			cfg:   cfg,
 			suite: suite,
-			cI:    bytes.Clone(cfg.ConnID),
+			cI:    bytes.Clone(connID),
 		},
 		suitesI: slices.Clone(cfg.Suites[:i+1]),
 	}, nil

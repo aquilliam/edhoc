@@ -41,9 +41,10 @@ const (
 )
 
 // An IDCred is an ID_CRED field (RFC 9528, Section 3.5.3): a COSE header map
-// that identifies a credential, such as { 4 : kid }.
+// that identifies a credential, such as { 4 : kid }. Two IDCreds are equal
+// with == when their encodings are the same, so an IDCred can be a map key.
 type IDCred struct {
-	raw []byte
+	raw string
 }
 
 // KeyID returns the ID_CRED { 4 : kid }.
@@ -51,7 +52,7 @@ func KeyID(kid []byte) IDCred {
 	b := cbor.AppendMap(nil, 1)
 	b = cbor.AppendInt(b, headerKID)
 	b = cbor.AppendBytes(b, kid)
-	return IDCred{raw: b}
+	return IDCred{raw: string(b)}
 }
 
 // X5T returns the ID_CRED { 34 : [-15, hash] } that identifies a DER-encoded
@@ -63,7 +64,7 @@ func X5T(der []byte) IDCred {
 	b = cbor.AppendArray(b, 2)
 	b = cbor.AppendInt(b, algSHA256_64)
 	b = cbor.AppendBytes(b, h[:8])
-	return IDCred{raw: b}
+	return IDCred{raw: string(b)}
 }
 
 // X5Chain returns the ID_CRED { 33 : x5chain } that carries an X.509
@@ -77,13 +78,13 @@ func X5Chain(certs ...[]byte) IDCred {
 	b = cbor.AppendInt(b, headerX5Chain)
 	if len(certs) == 1 {
 		b = cbor.AppendBytes(b, certs[0])
-		return IDCred{raw: b}
+		return IDCred{raw: string(b)}
 	}
 	b = cbor.AppendArray(b, len(certs))
 	for _, c := range certs {
 		b = cbor.AppendBytes(b, c)
 	}
-	return IDCred{raw: b}
+	return IDCred{raw: string(b)}
 }
 
 // KCCS returns the ID_CRED { 14 : ccs } that carries an encoded CWT Claims Set
@@ -92,7 +93,7 @@ func KCCS(ccs []byte) IDCred {
 	b := cbor.AppendMap(nil, 1)
 	b = cbor.AppendInt(b, headerKCCS)
 	b = append(b, ccs...)
-	return IDCred{raw: b}
+	return IDCred{raw: string(b)}
 }
 
 // ParseIDCred returns the IDCred for an encoded COSE header map, for ID_CRED
@@ -103,17 +104,17 @@ func ParseIDCred(raw []byte) (IDCred, error) {
 	if err != nil || !d.Done() {
 		return IDCred{}, errors.New("edhoc: ID_CRED is not a single COSE header map")
 	}
-	return IDCred{raw: bytes.Clone(m)}, nil
+	return IDCred{raw: string(m)}, nil
 }
 
 // Bytes returns the encoded header map.
 func (id IDCred) Bytes() []byte {
-	return bytes.Clone(id.raw)
+	return []byte(id.raw)
 }
 
 // Equal reports whether id and other have the same encoding.
 func (id IDCred) Equal(other IDCred) bool {
-	return bytes.Equal(id.raw, other.raw)
+	return id.raw == other.raw
 }
 
 // KeyID returns the kid if the header map is exactly { 4 : kid }.
@@ -178,7 +179,7 @@ func (id IDCred) KCCS() ([]byte, bool) {
 // single returns a decoder positioned at the value if the header map has
 // exactly one entry, with the given label.
 func (id IDCred) single(label int64) (*cbor.Decoder, bool) {
-	d := cbor.NewDecoder(id.raw)
+	d := cbor.NewDecoder([]byte(id.raw))
 	if n, err := d.Map(); err != nil || n != 1 {
 		return nil, false
 	}
@@ -205,7 +206,7 @@ func readIDCred(d *cbor.Decoder) (IDCred, error) {
 		if err != nil {
 			return IDCred{}, err
 		}
-		id := IDCred{raw: bytes.Clone(raw)}
+		id := IDCred{raw: string(raw)}
 		if _, ok := id.KeyID(); ok {
 			return IDCred{}, cbor.ErrNotDeterministic
 		}

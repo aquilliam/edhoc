@@ -114,7 +114,11 @@ func (r *Responder) readMessage3(msg []byte) error {
 	}
 
 	signs := h.cfg.Method.initiatorSigns()
-	peerKey, err := h.lookupPeer(idCredI, signs)
+	accepted, err := h.acceptEAD(ead)
+	if err != nil {
+		return err
+	}
+	peerKey, err := h.lookupPeer(idCredI, accepted, h.cR, h.cI, signs)
 	if err != nil {
 		return err
 	}
@@ -140,10 +144,7 @@ func (r *Responder) readMessage3(msg []byte) error {
 	} else if !macEqual(sigOrMAC, mac3) {
 		return failf("message_3 MAC verification failed")
 	}
-	h.peerEAD, err = h.acceptEAD(ead)
-	if err != nil {
-		return err
-	}
+	h.peerEAD = accepted
 	h.th4 = thNext(h.suite, h.th3, pt, h.peer.Raw)
 	r.session, err = h.finish(false)
 	return err

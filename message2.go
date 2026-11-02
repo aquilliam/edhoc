@@ -147,7 +147,11 @@ func (i *Initiator) readMessage2(msg []byte) error {
 	h.cR = bytes.Clone(cR)
 
 	signs := h.cfg.Method.responderSigns()
-	peerKey, err := h.lookupPeer(idCredR, signs)
+	accepted, err := h.acceptEAD(ead)
+	if err != nil {
+		return err
+	}
+	peerKey, err := h.lookupPeer(idCredR, accepted, h.cI, h.cR, signs)
 	if err != nil {
 		return err
 	}
@@ -174,10 +178,7 @@ func (i *Initiator) readMessage2(msg []byte) error {
 	} else if !macEqual(sigOrMAC, mac2) {
 		return failf("message_2 MAC verification failed")
 	}
-	h.peerEAD, err = h.acceptEAD(ead)
-	if err != nil {
-		return err
-	}
+	h.peerEAD = accepted
 	h.th3 = thNext(h.suite, h.th2, pt, h.peer.Raw)
 	return nil
 }
