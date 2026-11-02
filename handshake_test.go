@@ -592,7 +592,7 @@ func TestConfigChecks(t *testing.T) {
 	}{
 		{"signature method", func(c *Config) { c.Method = MethodSignSign }},
 		{"no suites", func(c *Config) { c.Suites = nil }},
-		{"unsupported suite", func(c *Config) { c.Suites = []Suite{6} }},
+		{"unsupported suite", func(c *Config) { c.Suites = []Suite{23} }},
 		{"repeated suite", func(c *Config) { c.Suites = []Suite{2, 2} }},
 		{"no credential", func(c *Config) { c.Credential.Raw = nil }},
 		{"no ID_CRED", func(c *Config) { c.Credential.ID = IDCred{} }},

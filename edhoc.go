@@ -35,12 +35,13 @@ type Suite int
 // comment after each lists the EDHOC AEAD and hash algorithms, the MAC length
 // for static DH authentication, and the key exchange and signature
 // algorithms. Suites 0 to 3 use AES-CCM-16-64-128 and SHA-256 for the
-// application.
+// application, and suite 6 uses A128GCM and SHA-256.
 const (
 	Suite0 Suite = 0 // AES-CCM-16-64-128, SHA-256, 8, X25519, EdDSA
 	Suite1 Suite = 1 // AES-CCM-16-128-128, SHA-256, 16, X25519, EdDSA
 	Suite2 Suite = 2 // AES-CCM-16-64-128, SHA-256, 8, P-256, ES256
 	Suite3 Suite = 3 // AES-CCM-16-128-128, SHA-256, 16, P-256, ES256
+	Suite6 Suite = 6 // A128GCM, SHA-256, 16, X25519, ES256
 )
 
 // A DHKey is a static Diffie-Hellman private key. *ecdh.PrivateKey satisfies

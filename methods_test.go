@@ -17,7 +17,7 @@ import (
 	"github.com/aquilliam/edhoc/internal/suites"
 )
 
-var allSuites = []Suite{Suite0, Suite1, Suite2, Suite3}
+var allSuites = []Suite{Suite0, Suite1, Suite2, Suite3, Suite6}
 
 func trace1(t *testing.T) func(string) []byte {
 	t.Helper()

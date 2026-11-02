@@ -20,6 +20,7 @@ import (
 
 // COSE algorithm identifiers (RFC 9053).
 const (
+	AlgA128GCM          = 1
 	AlgAESCCM16_64_128  = 10
 	AlgAESCCM16_128_128 = 30
 	AlgSHA256           = -16
@@ -120,6 +121,21 @@ var suite3 = &Suite{
 	AppKeySize: 16,
 }
 
+var suite6 = &Suite{
+	ID:         6,
+	KeySize:    16,
+	NonceSize:  12,
+	TagSize:    16,
+	newAEAD:    newAESGCM,
+	Hash:       crypto.SHA256,
+	MACLength:  16,
+	Curve:      ecdh.X25519(),
+	SigAlg:     AlgES256,
+	AppAEAD:    AlgA128GCM,
+	AppHash:    AlgSHA256,
+	AppKeySize: 16,
+}
+
 // ByID returns the cipher suite with the given label, or false if it is not
 // supported.
 func ByID(id int) (*Suite, bool) {
@@ -132,6 +148,8 @@ func ByID(id int) (*Suite, bool) {
 		return suite2, true
 	case 3:
 		return suite3, true
+	case 6:
+		return suite6, true
 	}
 	return nil, false
 }
@@ -144,6 +162,14 @@ func newAESCCM(tagSize int) func([]byte) (cipher.AEAD, error) {
 		}
 		return ccm.New(b, tagSize, 13)
 	}
+}
+
+func newAESGCM(key []byte) (cipher.AEAD, error) {
+	b, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(b)
 }
 
 // AEAD returns the EDHOC AEAD algorithm keyed with key.
