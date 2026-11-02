@@ -113,7 +113,7 @@ func TestTrace2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = r.ReadMessage1(first)
+	_, err = r.ReadMessage1(t.Context(), first)
 	var e *Error
 	if !errors.As(err, &e) || e.Code != ErrCodeWrongSelectedSuite {
 		t.Fatalf("ReadMessage1(first message_1) error = %v, want a wrong-suite error", err)
@@ -128,7 +128,7 @@ func TestTrace2(t *testing.T) {
 	if _, err := i.WriteMessage1(); err != nil {
 		t.Fatal(err)
 	}
-	err = i.ReadMessage2(t.Context(), tr("error (CBOR Sequence)"))
+	_, err = i.ReadMessage2(t.Context(), tr("error (CBOR Sequence)"))
 	var pe *PeerError
 	if !errors.As(err, &pe) || pe.Code != ErrCodeWrongSelectedSuite || len(pe.Suites) != 1 || pe.Suites[0] != Suite2 {
 		t.Fatalf("ReadMessage2(error) = %v, want SUITES_R = 2", err)
@@ -149,28 +149,25 @@ func TestTrace2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.ReadMessage1(msg1); err != nil {
+	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		t.Fatal(err)
 	}
 	r.h.eph = ephemeralKey(t, tr("Y (Raw Value)"))
 	msg2, err := r.WriteMessage2()
 	check(t, "message_2", msg2, err, tr("message_2 (CBOR Sequence)"))
 
-	if err := i.ReadMessage2(t.Context(), msg2); err != nil {
+	if _, err := i.ReadMessage2(t.Context(), msg2); err != nil {
 		t.Fatal(err)
-	}
-	if !i.PeerCredential().ID.Equal(ts.credR.ID) {
-		t.Fatal("Initiator did not record the Responder's credential")
 	}
 	msg3, err := i.WriteMessage3()
 	check(t, "message_3", msg3, err, tr("message_3 (CBOR Sequence)"))
 
-	if err := r.ReadMessage3(t.Context(), msg3); err != nil {
+	if _, err := r.ReadMessage3(t.Context(), msg3); err != nil {
 		t.Fatal(err)
 	}
 	msg4, err := r.WriteMessage4()
 	check(t, "message_4", msg4, err, tr("message_4 (CBOR Sequence)"))
-	if err := i.ReadMessage4(msg4); err != nil {
+	if _, err := i.ReadMessage4(msg4); err != nil {
 		t.Fatal(err)
 	}
 
@@ -201,7 +198,7 @@ func TestTrace2(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, o := range []*OSCOREContext{oi, or} {
+		for _, o := range []*OSCOREParams{oi, or} {
 			check(t, "OSCORE Master Secret"+step, o.MasterSecret, nil, tr("OSCORE Master Secret"+step+" (Raw Value)"))
 			check(t, "OSCORE Master Salt"+step, o.MasterSalt, nil, tr("OSCORE Master Salt"+step+" (Raw Value)"))
 			if o.AEADAlg != 10 || o.HashAlg != -16 {
@@ -266,28 +263,29 @@ func run(t *testing.T, i *Initiator, r *Responder, ead1, ead2, ead3, ead4 []EAD)
 	if err != nil {
 		return err
 	}
-	if err := r.ReadMessage1(msg1); err != nil {
+	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		return err
 	}
 	msg2, err := r.WriteMessage2(ead2...)
 	if err != nil {
 		return err
 	}
-	if err := i.ReadMessage2(t.Context(), msg2); err != nil {
+	if _, err := i.ReadMessage2(t.Context(), msg2); err != nil {
 		return err
 	}
 	msg3, err := i.WriteMessage3(ead3...)
 	if err != nil {
 		return err
 	}
-	if err := r.ReadMessage3(t.Context(), msg3); err != nil {
+	if _, err := r.ReadMessage3(t.Context(), msg3); err != nil {
 		return err
 	}
 	msg4, err := r.WriteMessage4(ead4...)
 	if err != nil {
 		return err
 	}
-	return i.ReadMessage4(msg4)
+	_, err = i.ReadMessage4(msg4)
+	return err
 }
 
 func TestHandshake(t *testing.T) {
@@ -324,31 +322,35 @@ func TestEAD(t *testing.T) {
 	ead3 := []EAD{pad, {Label: -7, Value: []byte("three")}}
 	ead4 := []EAD{{Label: 8}}
 	msg1, _ := i.WriteMessage1(ead1...)
-	if err := r.ReadMessage1(msg1); err != nil {
+	got, err := r.ReadMessage1(t.Context(), msg1)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := r.PeerEAD(); len(got) != 2 || got[0].Label != 5 || string(got[0].Value) != "one" || got[1].Label != -7 || got[1].Value != nil {
+	if len(got) != 2 || got[0].Label != 5 || string(got[0].Value) != "one" || got[1].Label != -7 || got[1].Value != nil {
 		t.Fatalf("EAD_1 = %+v", got)
 	}
 	msg2, _ := r.WriteMessage2(ead2...)
-	if err := i.ReadMessage2(t.Context(), msg2); err != nil {
+	got, err = i.ReadMessage2(t.Context(), msg2)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := i.PeerEAD(); len(got) != 1 || got[0].Label != 6 || got[0].Value == nil || len(got[0].Value) != 0 {
+	if len(got) != 1 || got[0].Label != 6 || got[0].Value == nil || len(got[0].Value) != 0 {
 		t.Fatalf("EAD_2 = %+v", got)
 	}
 	msg3, _ := i.WriteMessage3(ead3...)
-	if err := r.ReadMessage3(t.Context(), msg3); err != nil {
+	got, err = r.ReadMessage3(t.Context(), msg3)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := r.PeerEAD(); len(got) != 1 || string(got[0].Value) != "three" {
+	if len(got) != 1 || string(got[0].Value) != "three" {
 		t.Fatalf("EAD_3 = %+v", got)
 	}
 	msg4, _ := r.WriteMessage4(ead4...)
-	if err := i.ReadMessage4(msg4); err != nil {
+	got, err = i.ReadMessage4(msg4)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if got := i.PeerEAD(); len(got) != 1 || got[0].Label != 8 {
+	if len(got) != 1 || got[0].Label != 8 {
 		t.Fatalf("EAD_4 = %+v", got)
 	}
 }
@@ -356,13 +358,13 @@ func TestEAD(t *testing.T) {
 func TestUnknownCriticalEAD(t *testing.T) {
 	i, r, _, _ := newPair(t)
 	msg1, _ := i.WriteMessage1(EAD{Label: -9})
-	err := r.ReadMessage1(msg1)
+	_, err := r.ReadMessage1(t.Context(), msg1)
 	var e *Error
 	if !errors.As(err, &e) || e.Code != ErrCodeUnspecified {
 		t.Fatalf("ReadMessage1 error = %v, want an unspecified error", err)
 	}
 	reply := ErrorMessage(err)
-	if err := i.ReadMessage2(t.Context(), reply); err == nil || !strings.Contains(err.Error(), "critical EAD") {
+	if _, err := i.ReadMessage2(t.Context(), reply); err == nil || !strings.Contains(err.Error(), "critical EAD") {
 		t.Fatalf("Initiator got %v from the error message", err)
 	}
 }
@@ -371,16 +373,16 @@ func TestUnknownCredential(t *testing.T) {
 	i, r, cfgI, _ := newPair(t)
 	cfgI.PeerCredential = lookup()
 	msg1, _ := i.WriteMessage1()
-	r.ReadMessage1(msg1)
+	r.ReadMessage1(t.Context(), msg1)
 	msg2, _ := r.WriteMessage2()
-	err := i.ReadMessage2(t.Context(), msg2)
+	_, err := i.ReadMessage2(t.Context(), msg2)
 	if !errors.Is(err, ErrUnknownCredential) {
 		t.Fatalf("ReadMessage2 error = %v, want ErrUnknownCredential", err)
 	}
 	if got := ErrorMessage(err); !bytes.Equal(got, []byte{0x03, 0xf5}) {
 		t.Fatalf("error message = %x, want 03f5", got)
 	}
-	if err := r.ReadMessage3(t.Context(), ErrorMessage(err)); err == nil {
+	if _, err := r.ReadMessage3(t.Context(), ErrorMessage(err)); err == nil {
 		t.Fatal("Responder accepted an error message as message_3")
 	} else if pe := (*PeerError)(nil); !errors.As(err, &pe) || pe.Code != ErrCodeUnknownCredential {
 		t.Fatalf("ReadMessage3 error = %v, want a PeerError with code 3", err)
@@ -394,7 +396,7 @@ func TestSameConnectionIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg1, _ := i.WriteMessage1()
-	if err := r.ReadMessage1(msg1); err == nil {
+	if _, err := r.ReadMessage1(t.Context(), msg1); err == nil {
 		t.Fatal("Responder accepted C_I equal to C_R")
 	}
 }
@@ -417,10 +419,10 @@ func TestWrongState(t *testing.T) {
 	if _, err := i.WriteMessage1(); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("second WriteMessage1: %v", err)
 	}
-	if err := r.ReadMessage1(msg1[:len(msg1)-1]); err == nil {
+	if _, err := r.ReadMessage1(t.Context(), msg1[:len(msg1)-1]); err == nil {
 		t.Fatal("Responder accepted a truncated message_1")
 	}
-	if err := r.ReadMessage1(msg1); !errors.Is(err, ErrWrongState) {
+	if _, err := r.ReadMessage1(t.Context(), msg1); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("ReadMessage1 after a failure: %v", err)
 	}
 }
@@ -443,28 +445,29 @@ func TestTamperedMessages(t *testing.T) {
 			return true
 		}
 		msg1, _ := i.WriteMessage1()
-		if err := r.ReadMessage1(msg1); err != nil {
+		if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 			t.Fatal(err)
 		}
 		msg2, _ := r.WriteMessage2()
 		if !flip(msg2, 2) {
 			return nil, false
 		}
-		if err := i.ReadMessage2(t.Context(), msg2); err != nil || n == 2 {
+		if _, err := i.ReadMessage2(t.Context(), msg2); err != nil || n == 2 {
 			return err, true
 		}
 		msg3, _ := i.WriteMessage3()
 		if !flip(msg3, 3) {
 			return nil, false
 		}
-		if err := r.ReadMessage3(t.Context(), msg3); err != nil || n == 3 {
+		if _, err := r.ReadMessage3(t.Context(), msg3); err != nil || n == 3 {
 			return err, true
 		}
 		msg4, _ := r.WriteMessage4()
 		if !flip(msg4, 4) {
 			return nil, false
 		}
-		return i.ReadMessage4(msg4), true
+		_, err := i.ReadMessage4(msg4)
+		return err, true
 	}
 	for n := 2; n <= 4; n++ {
 		for k := 0; ; k++ {
@@ -502,7 +505,7 @@ func TestInvalidMessage1(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = r.ReadMessage1(unhex(t, tt.msg))
+			_, err = r.ReadMessage1(t.Context(), unhex(t, tt.msg))
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("ReadMessage1 error = %v, want one about %s", err, tt.want)
 			}
@@ -548,7 +551,7 @@ func TestInvalidMessage2(t *testing.T) {
 			if _, err := i.WriteMessage1(); err != nil {
 				t.Fatal(err)
 			}
-			err = i.ReadMessage2(t.Context(), tt.msg)
+			_, err = i.ReadMessage2(t.Context(), tt.msg)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("ReadMessage2 error = %v, want one about %s", err, tt.want)
 			}
@@ -569,7 +572,7 @@ func TestPeerErrorMessages(t *testing.T) {
 	for _, tt := range tests {
 		i, _, _, _ := newPair(t)
 		i.WriteMessage1()
-		err := i.ReadMessage2(t.Context(), unhex(t, tt.msg))
+		_, err := i.ReadMessage2(t.Context(), unhex(t, tt.msg))
 		var pe *PeerError
 		if !errors.As(err, &pe) || pe.Code != tt.want.Code || pe.Info != tt.want.Info || len(pe.Suites) != len(tt.want.Suites) {
 			t.Errorf("error message %s gave %v", tt.msg, err)
@@ -578,7 +581,7 @@ func TestPeerErrorMessages(t *testing.T) {
 	for _, bad := range []string{"01 01", "02 81 02", "03", "01 63 616263 00"} {
 		i, _, _, _ := newPair(t)
 		i.WriteMessage1()
-		err := i.ReadMessage2(t.Context(), unhex(t, bad))
+		_, err := i.ReadMessage2(t.Context(), unhex(t, bad))
 		var pe *PeerError
 		if err == nil || errors.As(err, &pe) {
 			t.Errorf("malformed error message %s gave %v", bad, err)
@@ -616,6 +619,121 @@ func TestConfigChecks(t *testing.T) {
 	c := *base
 	if _, err := NewInitiator(&c, pairCI, Suite0); err == nil {
 		t.Error("NewInitiator accepted peer suites with no suite in common")
+	}
+
+	// The P-256 key does not work with suite 0. The Initiator only needs a
+	// key for the suite it selects; the Responder needs one for every suite.
+	c.Suites = []Suite{Suite0, Suite2}
+	if _, err := NewInitiator(&c, pairCI); err == nil {
+		t.Error("NewInitiator selected a suite its key cannot be used with")
+	}
+	if _, err := NewInitiator(&c, pairCI, Suite2); err != nil {
+		t.Errorf("NewInitiator with a key for the selected suite: %v", err)
+	}
+	if _, err := NewResponder(&c, pairCR); err == nil {
+		t.Error("NewResponder accepted a suite its key cannot be used with")
+	}
+}
+
+func TestGetConfig(t *testing.T) {
+	keyI0, credI0 := party(t, false, Suite0, 0x01)
+	keyI2, credI2 := party(t, true, Suite2, 0x02)
+	keyR0, credR0 := party(t, false, Suite0, 0x03)
+	keyR2, credR2 := party(t, true, Suite2, 0x04)
+	peers := lookup(credI0, credI2)
+	byMethod := map[Method]*Config{
+		MethodStaticStatic: {Method: MethodStaticStatic, Suites: []Suite{Suite0},
+			Credential: credR0, Key: keyR0, PeerCredential: peers},
+		MethodSignSign: {Method: MethodSignSign, Suites: []Suite{Suite2},
+			Credential: credR2, Key: keyR2, PeerCredential: peers},
+	}
+	var got *Message1Info
+	cfgR := &Config{GetConfig: func(ctx context.Context, m *Message1Info) (*Config, error) {
+		got = m
+		c, ok := byMethod[m.Method]
+		if !ok {
+			return nil, errors.New("method not accepted")
+		}
+		return c, nil
+	}}
+	clients := []*Config{
+		{Method: MethodStaticStatic, Suites: []Suite{Suite0}, Credential: credI0, Key: keyI0,
+			PeerCredential: lookup(credR0)},
+		{Method: MethodSignSign, Suites: []Suite{Suite2}, Credential: credI2, Key: keyI2,
+			PeerCredential: lookup(credR2)},
+	}
+	for _, cfgI := range clients {
+		i, err := NewInitiator(cfgI, pairCI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := NewResponder(cfgR, pairCR)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := run(t, i, r, []EAD{{Label: 0}, {Label: 9}}, nil, nil, nil); err != nil {
+			t.Fatalf("%v: %v", cfgI.Method, err)
+		}
+		if got.Method != cfgI.Method || len(got.Suites) != 1 || got.Suites[0] != cfgI.Suites[0] ||
+			len(got.EAD) != 1 || got.EAD[0].Label != 9 ||
+			!bytes.Equal(got.ConnID, pairCR) || !bytes.Equal(got.PeerConnID, pairCI) {
+			t.Errorf("%v: Message1Info = %+v", cfgI.Method, got)
+		}
+	}
+
+	cfgI := *clients[0]
+	cfgI.Method = MethodSignStatic
+	cfgI.Key = keyI2
+	cfgI.Credential = credI2
+	cfgI.Suites = []Suite{Suite2}
+	i, _ := NewInitiator(&cfgI, pairCI)
+	r, _ := NewResponder(cfgR, pairCR)
+	msg1, _ := i.WriteMessage1()
+	_, err := r.ReadMessage1(t.Context(), msg1)
+	if err == nil || ErrorMessage(err) == nil {
+		t.Fatalf("ReadMessage1 with a refused method: err = %v, want an error to send", err)
+	}
+}
+
+func TestKeysErased(t *testing.T) {
+	i, r, _, _ := newPair(t)
+	msg1, _ := i.WriteMessage1()
+	r.ReadMessage1(t.Context(), msg1)
+	msg2, _ := r.WriteMessage2()
+	i.ReadMessage2(t.Context(), msg2)
+	msg3, _ := i.WriteMessage3()
+	if _, err := r.ReadMessage3(t.Context(), msg3); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []*handshake{&i.h, &r.h} {
+		if h.eph != nil || h.prk2e != nil || h.prk3e2m != nil || h.prk4e3m == nil {
+			t.Fatal("keys other than PRK_4e3m kept after message_3")
+		}
+	}
+	msg4, _ := r.WriteMessage4()
+	if _, err := i.ReadMessage4(msg4); err != nil {
+		t.Fatal(err)
+	}
+	if i.h.prk4e3m != nil || r.h.prk4e3m != nil {
+		t.Fatal("PRK_4e3m kept after message_4")
+	}
+}
+
+func TestSessionClose(t *testing.T) {
+	i, r, _, _ := newPair(t)
+	if err := run(t, i, r, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := i.Session()
+	s.Close()
+	if _, err := s.Exporter(0, nil, 16); !errors.Is(err, ErrWrongState) {
+		t.Errorf("Exporter after Close: %v", err)
+	}
+	if _, err := s.OSCORE(); !errors.Is(err, ErrWrongState) {
+		t.Errorf("OSCORE after Close: %v", err)
+	}
+	if err := s.KeyUpdate(nil); !errors.Is(err, ErrWrongState) {
+		t.Errorf("KeyUpdate after Close: %v", err)
 	}
 }
 
@@ -695,12 +813,12 @@ func TestPeerCredentialContext(t *testing.T) {
 		return lookUp(ctx, p)
 	}
 	msg1, _ := i.WriteMessage1()
-	if err := r.ReadMessage1(msg1); err != nil {
+	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		t.Fatal(err)
 	}
 	msg2, _ := r.WriteMessage2()
 	cancel()
-	err := i.ReadMessage2(ctx, msg2)
+	_, err := i.ReadMessage2(ctx, msg2)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("ReadMessage2 error = %v, want one wrapping context.Canceled", err)
 	}

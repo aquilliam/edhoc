@@ -92,22 +92,22 @@ func TestTrace1(t *testing.T) {
 
 	msg1, err := i.WriteMessage1()
 	check(t, "message_1", msg1, err, tr("message_1 (CBOR Sequence)"))
-	if err := r.ReadMessage1(msg1); err != nil {
+	if _, err := r.ReadMessage1(t.Context(), msg1); err != nil {
 		t.Fatal(err)
 	}
 	msg2, err := r.WriteMessage2()
 	check(t, "message_2", msg2, err, tr("message_2 (CBOR Sequence)"))
-	if err := i.ReadMessage2(t.Context(), msg2); err != nil {
+	if _, err := i.ReadMessage2(t.Context(), msg2); err != nil {
 		t.Fatal(err)
 	}
 	msg3, err := i.WriteMessage3()
 	check(t, "message_3", msg3, err, tr("message_3 (CBOR Sequence)"))
-	if err := r.ReadMessage3(t.Context(), msg3); err != nil {
+	if _, err := r.ReadMessage3(t.Context(), msg3); err != nil {
 		t.Fatal(err)
 	}
 	msg4, err := r.WriteMessage4()
 	check(t, "message_4", msg4, err, tr("message_4 (CBOR Sequence)"))
-	if err := i.ReadMessage4(msg4); err != nil {
+	if _, err := i.ReadMessage4(msg4); err != nil {
 		t.Fatal(err)
 	}
 	si, _ := i.Session()
@@ -299,7 +299,9 @@ func testByValue(t *testing.T, suite Suite, m Method, credI Credential, keyI any
 	if err := run(t, i, r, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(i.PeerCredential().Raw, credR.Raw) || !bytes.Equal(r.PeerCredential().Raw, credI.Raw) {
+	si, _ := i.Session()
+	sr, _ := r.Session()
+	if !bytes.Equal(si.PeerCredential().Raw, credR.Raw) || !bytes.Equal(sr.PeerCredential().Raw, credI.Raw) {
 		t.Fatal("peer credential does not match what was sent")
 	}
 }

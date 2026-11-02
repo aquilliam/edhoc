@@ -31,7 +31,8 @@ func (c ErrCode) String() string {
 }
 
 // ErrWrongState is returned when a method of an Initiator or Responder is
-// called out of order, or after the session has failed.
+// called out of order or after the session has failed, and when a Session is
+// used after Close.
 var ErrWrongState = errors.New("edhoc: method called in the wrong state")
 
 // ErrUnknownCredential is returned by a Config.PeerCredential function when

@@ -111,6 +111,22 @@ type PeerInfo struct {
 	ConnID, PeerConnID []byte
 }
 
+// Message1Info is what Config.GetConfig is told about a received message_1.
+type Message1Info struct {
+	// Method is the authentication method the Initiator chose.
+	Method Method
+
+	// Suites is SUITES_I. The last suite is the one the Initiator selected.
+	Suites []Suite
+
+	// EAD holds the EAD items in message_1, without padding.
+	EAD []EAD
+
+	// ConnID is this side's connection identifier, C_R, and PeerConnID the
+	// Initiator's, C_I.
+	ConnID, PeerConnID []byte
+}
+
 // Config configures one side of EDHOC sessions. A Config may be shared by
 // any number of sessions but must not be changed once it has been passed to
 // NewInitiator or NewResponder. Values that differ between sessions, such as
@@ -131,8 +147,11 @@ type Config struct {
 	// it uses static DH. Signing keys are ed25519.PrivateKey for EdDSA and
 	// *ecdsa.PrivateKey on P-256 for ES256 or on P-384 for ES384, or anything
 	// else that implements crypto.Signer with those public keys, such as a key
-	// in a KMS. Static DH keys must be on the curve of the selected suite.
-	Key any
+	// in a KMS. Static DH keys must be on the curve of the suite. An
+	// Initiator's key must suit the cipher suite it selects, and a
+	// Responder's every suite in Suites; a Responder that needs different
+	// keys for different suites uses GetConfig.
+	Key crypto.PrivateKey
 
 	// PeerCredential returns the peer's credential for the ID_CRED field it
 	// sent, or an error wrapping ErrUnknownCredential if there is no such
@@ -147,6 +166,14 @@ type Config struct {
 	// handles. A received critical EAD item with any other label fails the
 	// session. Padding (label 0) is always discarded.
 	EADLabels []int
+
+	// GetConfig, if set, is called by a Responder during ReadMessage1, with
+	// the context passed to it, and returns the Config for the rest of the
+	// session. It lets one Responder accept several methods, or choose its
+	// credential by the selected suite or by EAD_1. When GetConfig is set,
+	// the Responder ignores the other fields of this Config, and the
+	// GetConfig field of the returned Config. An Initiator ignores it.
+	GetConfig func(ctx context.Context, m *Message1Info) (*Config, error)
 }
 
 // suiteByID returns the implementation of a suite.
@@ -190,10 +217,29 @@ func (c *Config) check(initiator bool) error {
 	if c.Credential.PublicKey != nil && !samePublicKey(pub, c.Credential.PublicKey) {
 		return errors.New("edhoc: Key does not match the public key in Credential")
 	}
+	if !initiator {
+		for _, s := range c.Suites {
+			if !c.keyFits(s, signs) {
+				return fmt.Errorf("edhoc: Key cannot be used with %v", s)
+			}
+		}
+	}
 	if c.PeerCredential == nil {
 		return errors.New("edhoc: PeerCredential is not set")
 	}
 	return nil
+}
+
+// keyFits reports whether Key can authenticate this side with suite id.
+func (c *Config) keyFits(id Suite, signs bool) bool {
+	s, _ := suiteByID(id)
+	pub := c.signerOrDHPublic(signs)
+	if signs {
+		_, ok := signaturePublicKey(pub, s)
+		return ok
+	}
+	_, ok := dhPublicKey(pub, s.Curve)
+	return ok
 }
 
 // signerOrDHPublic returns the public half of Key, or nil if Key is not of the

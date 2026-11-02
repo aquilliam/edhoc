@@ -45,6 +45,7 @@ breaking changes until v1.0.
 | X.509 certificates identified by `x5t` | yes |
 | Credentials sent by value in `x5chain` or `kccs` | yes |
 | Other ID_CRED forms | through `ParseIDCred` |
+| CoAP payloads (RFC 9528, Appendix A.2) | `CoAPMessage1`, `CoAPRequest`, `ParseCoAPRequest` |
 
 ## Example
 
@@ -61,7 +62,7 @@ cfg := &edhoc.Config{
 initiator, err := edhoc.NewInitiator(cfg, []byte{0x37}) // C_I for this session
 msg1, err := initiator.WriteMessage1()
 // send msg1, receive msg2
-err = initiator.ReadMessage2(ctx, msg2)
+ead2, err := initiator.ReadMessage2(ctx, msg2)
 msg3, err := initiator.WriteMessage3()
 // send msg3
 session, err := initiator.Session()

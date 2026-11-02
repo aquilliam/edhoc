@@ -28,18 +28,29 @@ type handshake struct {
 	prk2e    []byte
 	prk3e2m  []byte
 	prk4e3m  []byte
-	prkOut   []byte
 
-	peer    Credential
-	peerEAD []EAD
+	peer Credential
 }
 
-// erase drops the keying material of a failed session.
+// erase drops all keying material, once the session has failed or message_4
+// has been sent or received.
 func (h *handshake) erase() {
-	for _, k := range [][]byte{h.prk2e, h.prk3e2m, h.prk4e3m, h.prkOut} {
+	for _, k := range [][]byte{h.prk2e, h.prk3e2m, h.prk4e3m} {
 		clear(k)
 	}
-	h.eph, h.prk2e, h.prk3e2m, h.prk4e3m, h.prkOut = nil, nil, nil, nil, nil
+	h.eph, h.prk2e, h.prk3e2m, h.prk4e3m = nil, nil, nil, nil
+}
+
+// eraseBeforeMessage4 drops the keying material that message_4 does not need.
+// PRK_3e2m and PRK_2e may share memory with PRK_4e3m, which is kept.
+func (h *handshake) eraseBeforeMessage4() {
+	for _, k := range [][]byte{h.prk2e, h.prk3e2m} {
+		if len(k) > 0 && len(h.prk4e3m) > 0 && &k[0] == &h.prk4e3m[0] {
+			continue
+		}
+		clear(k)
+	}
+	h.eph, h.prk2e, h.prk3e2m = nil, nil, nil
 }
 
 // ephemeral returns this side's ephemeral key, generating it on first use.
@@ -54,14 +65,10 @@ func (h *handshake) ephemeral() (*ecdh.PrivateKey, error) {
 	return h.eph, nil
 }
 
-// staticKey returns this side's static DH key, checking that it is on the
-// curve of the selected suite.
-func (h *handshake) staticKey() (DHKey, error) {
-	k := h.cfg.Key.(DHKey)
-	if k.PublicKey().Curve() != h.suite.Curve {
-		return nil, failf("static DH key is not on the curve of cipher suite %d", h.suite.ID)
-	}
-	return k, nil
+// staticKey returns this side's static DH key. Config.check has made sure it
+// is on the curve of every configured suite.
+func (h *handshake) staticKey() DHKey {
+	return h.cfg.Key.(DHKey)
 }
 
 // signer returns this side's signature key.
@@ -232,7 +239,6 @@ func (h *handshake) finish(initiator bool) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	h.prkOut = prkOut
 	s := &Session{
 		suite:     h.suite,
 		initiator: initiator,
@@ -240,8 +246,10 @@ func (h *handshake) finish(initiator bool) (*Session, error) {
 		cR:        h.cR,
 		peer:      h.peer,
 	}
-	if err := s.setPRKOut(bytes.Clone(prkOut)); err != nil {
+	if err := s.setPRKOut(prkOut); err != nil {
+		clear(prkOut)
 		return nil, err
 	}
+	h.eraseBeforeMessage4()
 	return s, nil
 }

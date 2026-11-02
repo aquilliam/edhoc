@@ -157,7 +157,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 			t.Fatal(err)
 		}
 		p.send(msg1)
-		if err := i.ReadMessage2(t.Context(), p.recv()); err != nil {
+		if _, err := i.ReadMessage2(t.Context(), p.recv()); err != nil {
 			t.Fatal(err)
 		}
 		msg3, err := i.WriteMessage3()
@@ -165,7 +165,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 			t.Fatal(err)
 		}
 		p.send(msg3)
-		if err := i.ReadMessage4(p.recv()); err != nil {
+		if _, err := i.ReadMessage4(p.recv()); err != nil {
 			t.Fatal(err)
 		}
 		s, err = i.Session()
@@ -177,7 +177,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := r.ReadMessage1(p.recv()); err != nil {
+		if _, err := r.ReadMessage1(t.Context(), p.recv()); err != nil {
 			t.Fatal(err)
 		}
 		msg2, err := r.WriteMessage2()
@@ -185,7 +185,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 			t.Fatal(err)
 		}
 		p.send(msg2)
-		if err := r.ReadMessage3(t.Context(), p.recv()); err != nil {
+		if _, err := r.ReadMessage3(t.Context(), p.recv()); err != nil {
 			t.Fatal(err)
 		}
 		msg4, err := r.WriteMessage4()

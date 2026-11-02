@@ -20,7 +20,7 @@ func FuzzMessage1(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := r.ReadMessage1(msg); err != nil {
+		if _, err := r.ReadMessage1(t.Context(), msg); err != nil {
 			ErrorMessage(err)
 			return
 		}
@@ -81,7 +81,7 @@ func (fs *fuzzSetup) responder(t *testing.T) *Responder {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.ReadMessage1(fs.msg1); err != nil {
+	if _, err := r.ReadMessage1(t.Context(), fs.msg1); err != nil {
 		t.Fatal(err)
 	}
 	r.h.eph = ephemeralKey(t, fs.y)
@@ -112,7 +112,7 @@ func FuzzPlaintext2(f *testing.F) {
 		body := make([]byte, len(gY)+len(pt))
 		copy(body, gY)
 		subtle.XORBytes(body[len(gY):], pt, keystream)
-		if err := i.ReadMessage2(t.Context(), cbor.AppendBytes(nil, body)); err != nil {
+		if _, err := i.ReadMessage2(t.Context(), cbor.AppendBytes(nil, body)); err != nil {
 			ErrorMessage(err)
 			return
 		}
@@ -132,7 +132,7 @@ func FuzzPlaintext3(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := r.ReadMessage3(t.Context(), cbor.AppendBytes(nil, ct)); err != nil {
+		if _, err := r.ReadMessage3(t.Context(), cbor.AppendBytes(nil, ct)); err != nil {
 			ErrorMessage(err)
 			return
 		}
@@ -148,13 +148,13 @@ func FuzzMessage4(f *testing.F) {
 	f.Add(fs.errMsg)
 	f.Fuzz(func(t *testing.T, msg []byte) {
 		i := fs.initiator(t)
-		if err := i.ReadMessage2(t.Context(), fs.msg2); err != nil {
+		if _, err := i.ReadMessage2(t.Context(), fs.msg2); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := i.WriteMessage3(); err != nil {
 			t.Fatal(err)
 		}
-		if err := i.ReadMessage4(msg); err != nil {
+		if _, err := i.ReadMessage4(msg); err != nil {
 			ErrorMessage(err)
 		}
 	})

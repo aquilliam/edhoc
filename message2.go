@@ -37,10 +37,7 @@ func (r *Responder) writeMessage2(ead []EAD) ([]byte, error) {
 	if signs {
 		h.prk3e2m = h.prk2e
 	} else {
-		key, err := h.staticKey()
-		if err != nil {
-			return nil, err
-		}
+		key := h.staticKey()
 		gRX, err := key.ECDH(h.peerEph)
 		if err != nil {
 			return nil, wrapf(err, "computing G_RX")
@@ -82,45 +79,47 @@ func (r *Responder) writeMessage2(ead []EAD) ([]byte, error) {
 	return cbor.AppendBytes(nil, body), nil
 }
 
-// ReadMessage2 processes message_2 (RFC 9528, Section 5.3.3). It calls
-// Config.PeerCredential with ctx to find the Responder's credential and
-// checks the Responder's proof of possession of the key in it. If the
-// Responder sent an error message instead, the error is a *PeerError.
-func (i *Initiator) ReadMessage2(ctx context.Context, msg []byte) error {
+// ReadMessage2 processes message_2 (RFC 9528, Section 5.3.3) and returns its
+// EAD items, without padding. It calls Config.PeerCredential with ctx to find
+// the Responder's credential and checks the Responder's proof of possession
+// of the key in it. If the Responder sent an error message instead, the error
+// is a *PeerError.
+func (i *Initiator) ReadMessage2(ctx context.Context, msg []byte) ([]EAD, error) {
 	if i.state != initiatorWroteMessage1 {
-		return ErrWrongState
+		return nil, ErrWrongState
 	}
 	if isErrorMessage(msg) {
-		return i.fail(parseErrorMessage(msg))
+		return nil, i.fail(parseErrorMessage(msg))
 	}
-	if err := i.readMessage2(ctx, msg); err != nil {
-		return i.fail(err)
+	ead, err := i.readMessage2(ctx, msg)
+	if err != nil {
+		return nil, i.fail(err)
 	}
 	i.state = initiatorReadMessage2
-	return nil
+	return ead, nil
 }
 
-func (i *Initiator) readMessage2(ctx context.Context, msg []byte) error {
+func (i *Initiator) readMessage2(ctx context.Context, msg []byte) ([]EAD, error) {
 	h := &i.h
 	body, err := readCiphertext(msg, "message_2")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	n := h.suite.PublicKeySize()
 	if len(body) <= n {
-		return failf("malformed message_2: too short")
+		return nil, failf("malformed message_2: too short")
 	}
 	gY, ct := body[:n], body[n:]
 	h.peerEph, err = h.suite.ParsePublicKey(gY)
 	if err != nil {
-		return wrapf(err, "invalid G_Y")
+		return nil, wrapf(err, "invalid G_Y")
 	}
 	if err := h.derivePRK2e(gY); err != nil {
-		return err
+		return nil, err
 	}
 	keystream, err := kdf(h.suite, h.prk2e, labelKeystream2, h.th2, len(ct))
 	if err != nil {
-		return wrapf(err, "CIPHERTEXT_2 is too long")
+		return nil, wrapf(err, "CIPHERTEXT_2 is too long")
 	}
 	pt := make([]byte, len(ct))
 	subtle.XORBytes(pt, ct, keystream)
@@ -128,33 +127,33 @@ func (i *Initiator) readMessage2(ctx context.Context, msg []byte) error {
 	d := cbor.NewDecoder(pt)
 	cR, err := d.ID()
 	if err != nil {
-		return wrapf(err, "malformed PLAINTEXT_2: C_R")
+		return nil, wrapf(err, "malformed PLAINTEXT_2: C_R")
 	}
 	idCredR, err := readIDCred(d)
 	if err != nil {
-		return wrapf(err, "malformed PLAINTEXT_2: ID_CRED_R")
+		return nil, wrapf(err, "malformed PLAINTEXT_2: ID_CRED_R")
 	}
 	sigOrMAC, err := d.Bytes()
 	if err != nil {
-		return wrapf(err, "malformed PLAINTEXT_2: Signature_or_MAC_2")
+		return nil, wrapf(err, "malformed PLAINTEXT_2: Signature_or_MAC_2")
 	}
 	ead, eadRaw, err := readEAD(d)
 	if err != nil {
-		return wrapf(err, "malformed PLAINTEXT_2: EAD_2")
+		return nil, wrapf(err, "malformed PLAINTEXT_2: EAD_2")
 	}
 	if bytes.Equal(cR, h.cI) {
-		return failf("C_R is the same as C_I")
+		return nil, failf("C_R is the same as C_I")
 	}
 	h.cR = bytes.Clone(cR)
 
 	signs := h.cfg.Method.responderSigns()
 	accepted, err := h.acceptEAD(ead)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	peerKey, err := h.lookupPeer(ctx, idCredR, accepted, h.cI, h.cR, signs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if signs {
 		h.prk3e2m = h.prk2e
@@ -162,24 +161,23 @@ func (i *Initiator) readMessage2(ctx context.Context, msg []byte) error {
 		x, _ := h.ephemeral()
 		gRX, err := x.ECDH(peerKey.(*ecdh.PublicKey))
 		if err != nil {
-			return wrapf(err, "computing G_RX")
+			return nil, wrapf(err, "computing G_RX")
 		}
 		if err := h.derivePRK3e2m(gRX); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	mac2, err := h.mac2(idCredR, h.peer.Raw, eadRaw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if signs {
 		if !h.suite.Verify(peerKey, toBeSigned(idCredR, h.th2, h.peer.Raw, eadRaw, mac2), sigOrMAC) {
-			return failf("message_2 signature verification failed")
+			return nil, failf("message_2 signature verification failed")
 		}
 	} else if !macEqual(sigOrMAC, mac2) {
-		return failf("message_2 MAC verification failed")
+		return nil, failf("message_2 MAC verification failed")
 	}
-	h.peerEAD = accepted
 	h.th3 = thNext(h.suite, h.th2, pt, h.peer.Raw)
-	return nil
+	return accepted, nil
 }

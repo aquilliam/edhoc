@@ -27,10 +27,7 @@ func (i *Initiator) writeMessage3(ead []EAD) ([]byte, error) {
 	if signs {
 		h.prk4e3m = h.prk3e2m
 	} else {
-		key, err := h.staticKey()
-		if err != nil {
-			return nil, err
-		}
+		key := h.staticKey()
 		gIY, err := key.ECDH(h.peerEph)
 		if err != nil {
 			return nil, wrapf(err, "computing G_IY")
@@ -72,81 +69,85 @@ func (i *Initiator) writeMessage3(ead []EAD) ([]byte, error) {
 
 // ReadMessage3 processes message_3 (RFC 9528, Section 5.4.3). It calls
 // Config.PeerCredential with ctx to find the Initiator's credential and
-// checks the Initiator's proof of possession of the key in it. Once it
-// succeeds, Session returns the session. If the Initiator sent an error
-// message instead, the error is a *PeerError.
-func (r *Responder) ReadMessage3(ctx context.Context, msg []byte) error {
+// checks the Initiator's proof of possession of the key in it. It returns
+// the EAD items of message_3, without padding. Once it succeeds, Session
+// returns the session. If the Initiator sent an error message instead, the
+// error is a *PeerError.
+func (r *Responder) ReadMessage3(ctx context.Context, msg []byte) ([]EAD, error) {
 	if r.state != responderWroteMessage2 {
-		return ErrWrongState
+		return nil, ErrWrongState
 	}
 	if isErrorMessage(msg) {
-		return r.fail(parseErrorMessage(msg))
+		return nil, r.fail(parseErrorMessage(msg))
 	}
-	if err := r.readMessage3(ctx, msg); err != nil {
-		return r.fail(err)
+	ead, err := r.readMessage3(ctx, msg)
+	if err != nil {
+		return nil, r.fail(err)
 	}
 	r.state = responderReadMessage3
-	return nil
+	return ead, nil
 }
 
-func (r *Responder) readMessage3(ctx context.Context, msg []byte) error {
+func (r *Responder) readMessage3(ctx context.Context, msg []byte) ([]EAD, error) {
 	h := &r.h
 	ct, err := readCiphertext(msg, "message_3")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pt, err := h.encrypt0(false, h.prk3e2m, labelK3, labelIV3, h.th3, ct)
 	if err != nil {
-		return wrapf(err, "decrypting message_3")
+		return nil, wrapf(err, "decrypting message_3")
 	}
 
 	d := cbor.NewDecoder(pt)
 	idCredI, err := readIDCred(d)
 	if err != nil {
-		return wrapf(err, "malformed PLAINTEXT_3: ID_CRED_I")
+		return nil, wrapf(err, "malformed PLAINTEXT_3: ID_CRED_I")
 	}
 	sigOrMAC, err := d.Bytes()
 	if err != nil {
-		return wrapf(err, "malformed PLAINTEXT_3: Signature_or_MAC_3")
+		return nil, wrapf(err, "malformed PLAINTEXT_3: Signature_or_MAC_3")
 	}
 	ead, eadRaw, err := readEAD(d)
 	if err != nil {
-		return wrapf(err, "malformed PLAINTEXT_3: EAD_3")
+		return nil, wrapf(err, "malformed PLAINTEXT_3: EAD_3")
 	}
 
 	signs := h.cfg.Method.initiatorSigns()
 	accepted, err := h.acceptEAD(ead)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	peerKey, err := h.lookupPeer(ctx, idCredI, accepted, h.cR, h.cI, signs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if signs {
 		h.prk4e3m = h.prk3e2m
 	} else {
 		gIY, err := h.eph.ECDH(peerKey.(*ecdh.PublicKey))
 		if err != nil {
-			return wrapf(err, "computing G_IY")
+			return nil, wrapf(err, "computing G_IY")
 		}
 		if err := h.derivePRK4e3m(gIY); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	mac3, err := h.mac3(idCredI, h.peer.Raw, eadRaw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if signs {
 		if !h.suite.Verify(peerKey, toBeSigned(idCredI, h.th3, h.peer.Raw, eadRaw, mac3), sigOrMAC) {
-			return failf("message_3 signature verification failed")
+			return nil, failf("message_3 signature verification failed")
 		}
 	} else if !macEqual(sigOrMAC, mac3) {
-		return failf("message_3 MAC verification failed")
+		return nil, failf("message_3 MAC verification failed")
 	}
-	h.peerEAD = accepted
 	h.th4 = thNext(h.suite, h.th3, pt, h.peer.Raw)
 	r.session, err = h.finish(false)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return accepted, nil
 }

@@ -3,6 +3,7 @@ package edhoc
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -53,6 +54,9 @@ func NewInitiator(cfg *Config, connID []byte, peerSuites ...Suite) (*Initiator, 
 			return nil, errors.New("edhoc: no cipher suite in common with the Responder")
 		}
 	}
+	if !cfg.keyFits(cfg.Suites[i], cfg.Method.initiatorSigns()) {
+		return nil, fmt.Errorf("edhoc: Key cannot be used with %v", cfg.Suites[i])
+	}
 	suite, _ := suiteByID(cfg.Suites[i])
 	return &Initiator{
 		h: handshake{
@@ -69,17 +73,6 @@ func (i *Initiator) fail(err error) error {
 	i.state = initiatorFailed
 	i.h.erase()
 	return err
-}
-
-// PeerCredential returns the Responder's credential once ReadMessage2 has
-// succeeded.
-func (i *Initiator) PeerCredential() Credential {
-	return i.h.peer
-}
-
-// PeerEAD returns the EAD items in the last message read, without padding.
-func (i *Initiator) PeerEAD() []EAD {
-	return i.h.peerEAD
 }
 
 // Session returns the session once WriteMessage3 has succeeded.

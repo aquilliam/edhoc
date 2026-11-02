@@ -229,15 +229,16 @@ type Credential struct {
 	// for example the encoded CWT Claims Set of a raw public key.
 	Raw []byte
 
-	// PublicKey is the authentication key in the credential. For static DH
-	// authentication it is an *ecdh.PublicKey.
+	// PublicKey is the authentication key in the credential: an
+	// ed25519.PublicKey for EdDSA, an *ecdh.PublicKey for X25519, and either
+	// an *ecdsa.PublicKey or an *ecdh.PublicKey on P-256 or P-384.
 	PublicKey crypto.PublicKey
 }
 
 // NewX509 returns the credential for a DER-encoded X.509 certificate,
 // identified by X5T. To send the certificate by value instead, set ID to
-// X5Chain(der, intermediates...). CRED is the certificate as a CBOR byte string (RFC 9528,
-// Section 3.5.2). The certificate is parsed for its public key but not
+// X5Chain(der, intermediates...). CRED is the certificate as a CBOR byte
+// string (RFC 9528, Section 3.5.2). The certificate is parsed for its public key but not
 // verified; that is up to the application.
 func NewX509(der []byte) (Credential, error) {
 	cert, err := x509.ParseCertificate(der)

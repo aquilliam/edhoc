@@ -23,7 +23,8 @@ const labelKeyUpdate = 11
 // application data, until it has received message_4 or a message protected
 // with a derived key from the Responder (RFC 9528, Section 5.4.2).
 //
-// A Session is safe for concurrent use.
+// Call Close once the application no longer needs to derive keys from the
+// session. A Session is safe for concurrent use.
 type Session struct {
 	mu          sync.RWMutex
 	suite       *suites.Suite
@@ -53,6 +54,9 @@ func (s *Session) Exporter(label int, context []byte, length int) ([]byte, error
 }
 
 func (s *Session) exporter(label int, context []byte, length int) ([]byte, error) {
+	if s.prkExporter == nil {
+		return nil, ErrWrongState
+	}
 	if label < 0 {
 		return nil, errors.New("edhoc: exporter label must not be negative")
 	}
@@ -66,6 +70,9 @@ func (s *Session) exporter(label int, context []byte, length int) ([]byte, error
 func (s *Session) KeyUpdate(context []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.prkOut == nil {
+		return ErrWrongState
+	}
 	prkOut, err := kdf(s.suite, s.prkOut, labelKeyUpdate, context, s.suite.HashLength())
 	if err != nil {
 		return err
@@ -79,9 +86,9 @@ func (s *Session) KeyUpdate(context []byte) error {
 	return nil
 }
 
-// An OSCOREContext holds the input parameters for an OSCORE security context
+// OSCOREParams holds the input parameters for an OSCORE security context
 // (RFC 8613, Section 3.2) derived from an EDHOC session.
-type OSCOREContext struct {
+type OSCOREParams struct {
 	MasterSecret []byte
 	MasterSalt   []byte
 	SenderID     []byte
@@ -98,7 +105,7 @@ type OSCOREContext struct {
 // lengths from RFC 9528, Appendix A.1: a Master Secret as long as the
 // application AEAD key and an 8-byte Master Salt. Use Exporter with labels 0
 // and 1 if the application has agreed on other lengths.
-func (s *Session) OSCORE() (*OSCOREContext, error) {
+func (s *Session) OSCORE() (*OSCOREParams, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	secret, err := s.exporter(exporterOSCOREMasterSecret, nil, s.suite.AppKeySize)
@@ -109,7 +116,7 @@ func (s *Session) OSCORE() (*OSCOREContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &OSCOREContext{
+	c := &OSCOREParams{
 		MasterSecret: secret,
 		MasterSalt:   salt,
 		SenderID:     bytes.Clone(s.cR),
@@ -121,6 +128,16 @@ func (s *Session) OSCORE() (*OSCOREContext, error) {
 		c.SenderID, c.RecipientID = c.RecipientID, c.SenderID
 	}
 	return c, nil
+}
+
+// Close erases the session's keying material. Exporter, KeyUpdate and OSCORE
+// then return ErrWrongState. Keys already exported are not affected.
+func (s *Session) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	clear(s.prkOut)
+	clear(s.prkExporter)
+	s.prkOut, s.prkExporter = nil, nil
 }
 
 // Suite returns the selected cipher suite.
