@@ -16,8 +16,10 @@ import (
 
 // COSE header parameter and key labels (RFC 9052, Sections 3.1 and 7.1).
 const (
-	headerKID = 4
-	headerX5T = 34
+	headerKID     = 4
+	headerKCCS    = 14
+	headerX5Chain = 33
+	headerX5T     = 34
 
 	algSHA256_64 = -15
 
@@ -64,6 +66,35 @@ func X5T(der []byte) IDCred {
 	return IDCred{raw: b}
 }
 
+// X5Chain returns the ID_CRED { 33 : x5chain } that carries an X.509
+// certificate chain by value (RFC 9360). certs are DER-encoded, starting with
+// the end-entity certificate. It panics if certs is empty.
+func X5Chain(certs ...[]byte) IDCred {
+	if len(certs) == 0 {
+		panic("edhoc: X5Chain needs at least one certificate")
+	}
+	b := cbor.AppendMap(nil, 1)
+	b = cbor.AppendInt(b, headerX5Chain)
+	if len(certs) == 1 {
+		b = cbor.AppendBytes(b, certs[0])
+		return IDCred{raw: b}
+	}
+	b = cbor.AppendArray(b, len(certs))
+	for _, c := range certs {
+		b = cbor.AppendBytes(b, c)
+	}
+	return IDCred{raw: b}
+}
+
+// KCCS returns the ID_CRED { 14 : ccs } that carries an encoded CWT Claims Set
+// by value (RFC 9528, Section 3.5.3).
+func KCCS(ccs []byte) IDCred {
+	b := cbor.AppendMap(nil, 1)
+	b = cbor.AppendInt(b, headerKCCS)
+	b = append(b, ccs...)
+	return IDCred{raw: b}
+}
+
 // ParseIDCred returns the IDCred for an encoded COSE header map, for ID_CRED
 // forms this package has no constructor for.
 func ParseIDCred(raw []byte) (IDCred, error) {
@@ -87,11 +118,8 @@ func (id IDCred) Equal(other IDCred) bool {
 
 // KeyID returns the kid if the header map is exactly { 4 : kid }.
 func (id IDCred) KeyID() ([]byte, bool) {
-	d := cbor.NewDecoder(id.raw)
-	if n, err := d.Map(); err != nil || n != 1 {
-		return nil, false
-	}
-	if label, err := d.Int(); err != nil || label != headerKID {
+	d, ok := id.single(headerKID)
+	if !ok {
 		return nil, false
 	}
 	kid, err := d.Bytes()
@@ -99,6 +127,65 @@ func (id IDCred) KeyID() ([]byte, bool) {
 		return nil, false
 	}
 	return bytes.Clone(kid), true
+}
+
+// X5Chain returns the DER-encoded certificates if the header map is exactly
+// { 33 : x5chain }. The certificates are not parsed or verified.
+func (id IDCred) X5Chain() ([][]byte, bool) {
+	d, ok := id.single(headerX5Chain)
+	if !ok {
+		return nil, false
+	}
+	if m, _ := d.Major(); m == 2 {
+		c, err := d.Bytes()
+		if err != nil || !d.Done() {
+			return nil, false
+		}
+		return [][]byte{bytes.Clone(c)}, true
+	}
+	n, err := d.Array()
+	if err != nil || n == 0 {
+		return nil, false
+	}
+	certs := make([][]byte, 0, n)
+	for range n {
+		c, err := d.Bytes()
+		if err != nil {
+			return nil, false
+		}
+		certs = append(certs, bytes.Clone(c))
+	}
+	return certs, d.Done()
+}
+
+// KCCS returns the encoded CWT Claims Set if the header map is exactly
+// { 14 : ccs }. The result can be passed to ParseCCS.
+func (id IDCred) KCCS() ([]byte, bool) {
+	d, ok := id.single(headerKCCS)
+	if !ok {
+		return nil, false
+	}
+	if m, _ := d.Major(); m != 5 {
+		return nil, false
+	}
+	ccs, err := d.Raw()
+	if err != nil || !d.Done() {
+		return nil, false
+	}
+	return bytes.Clone(ccs), true
+}
+
+// single returns a decoder positioned at the value if the header map has
+// exactly one entry, with the given label.
+func (id IDCred) single(label int64) (*cbor.Decoder, bool) {
+	d := cbor.NewDecoder(id.raw)
+	if n, err := d.Map(); err != nil || n != 1 {
+		return nil, false
+	}
+	if l, err := d.Int(); err != nil || l != label {
+		return nil, false
+	}
+	return d, true
 }
 
 // appendCompact appends the ID_CRED field as it appears in PLAINTEXT_2 and
@@ -147,7 +234,8 @@ type Credential struct {
 }
 
 // NewX509 returns the credential for a DER-encoded X.509 certificate,
-// identified by X5T. CRED is the certificate as a CBOR byte string (RFC 9528,
+// identified by X5T. To send the certificate by value instead, set ID to
+// X5Chain(der, intermediates...). CRED is the certificate as a CBOR byte string (RFC 9528,
 // Section 3.5.2). The certificate is parsed for its public key but not
 // verified; that is up to the application.
 func NewX509(der []byte) (Credential, error) {
@@ -166,7 +254,8 @@ var errCCS = errors.New("edhoc: malformed CWT Claims Set")
 
 // ParseCCS returns the credential for a CWT Claims Set holding a COSE_Key in
 // a 'cnf' claim, the way EDHOC carries raw public keys. If the COSE_Key has a
-// kid, the credential's ID is { 4 : kid }; otherwise the caller sets ID.
+// kid, the credential's ID is { 4 : kid }; otherwise the caller sets ID. To
+// send the claims set by value, set ID to KCCS(ccs).
 //
 // Supported keys are P-256 and P-384 (EC2 with both coordinates), X25519 and
 // Ed25519. P-256, P-384 and X25519 keys come back as *ecdh.PublicKey, Ed25519

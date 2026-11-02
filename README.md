@@ -41,7 +41,8 @@ breaking changes until v1.0.
 | EDHOC_Exporter, EDHOC_KeyUpdate, OSCORE parameters | yes |
 | Raw public keys (CCS) identified by `kid` | yes |
 | X.509 certificates identified by `x5t` | yes |
-| `x5chain`, `kccs` and other ID_CRED forms | planned; usable now through `ParseIDCred` |
+| Credentials sent by value in `x5chain` or `kccs` | yes |
+| Other ID_CRED forms | through `ParseIDCred` |
 
 ## Example
 

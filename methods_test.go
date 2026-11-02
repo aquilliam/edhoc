@@ -1,6 +1,7 @@
 package edhoc
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdh"
 	"crypto/ecdsa"
@@ -242,5 +243,64 @@ func TestWrongKeyType(t *testing.T) {
 		Credential: credR, Key: keyR, PeerCredential: lookup(credI)}
 	if _, err := NewResponder(cfg); err == nil {
 		t.Fatal("NewResponder accepted a DH key for signing")
+	}
+}
+
+// TestCredentialsByValue runs sessions where each side sends its credential
+// in ID_CRED and the peer builds the Credential from it.
+func TestCredentialsByValue(t *testing.T) {
+	tr := trace1(t)
+	fromX5Chain := func(id IDCred) (Credential, error) {
+		chain, ok := id.X5Chain()
+		if !ok {
+			return Credential{}, ErrUnknownCredential
+		}
+		return NewX509(chain[0])
+	}
+	fromKCCS := func(id IDCred) (Credential, error) {
+		ccs, ok := id.KCCS()
+		if !ok {
+			return Credential{}, ErrUnknownCredential
+		}
+		return ParseCCS(ccs)
+	}
+
+	credI, _ := NewX509(tr("CRED_I (Raw Value)"))
+	credR, _ := NewX509(tr("CRED_R (Raw Value)"))
+	credI.ID = X5Chain(tr("CRED_I (Raw Value)"))
+	credR.ID = X5Chain(tr("CRED_R (Raw Value)"))
+	keyI := ed25519.NewKeyFromSeed(tr("SK_I (Raw Value)"))
+	keyR := ed25519.NewKeyFromSeed(tr("SK_R (Raw Value)"))
+	t.Run("x5chain", func(t *testing.T) {
+		testByValue(t, Suite0, MethodSignSign, credI, keyI, credR, keyR, fromX5Chain)
+	})
+
+	for m := MethodSignSign; m <= MethodStaticStatic; m++ {
+		keyI, credI := party(t, m.initiatorSigns(), Suite2, 0x01)
+		keyR, credR := party(t, m.responderSigns(), Suite2, 0x02)
+		credI.ID, credR.ID = KCCS(credI.Raw), KCCS(credR.Raw)
+		t.Run(fmt.Sprintf("kccs method %d", m), func(t *testing.T) {
+			testByValue(t, Suite2, m, credI, keyI, credR, keyR, fromKCCS)
+		})
+	}
+}
+
+func testByValue(t *testing.T, suite Suite, m Method, credI Credential, keyI any, credR Credential, keyR any,
+	peer func(IDCred) (Credential, error)) {
+	i, err := NewInitiator(&Config{Method: m, Suites: []Suite{suite}, ConnID: []byte{0x0e},
+		Credential: credI, Key: keyI, PeerCredential: peer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewResponder(&Config{Method: m, Suites: []Suite{suite}, ConnID: []byte{0x07},
+		Credential: credR, Key: keyR, PeerCredential: peer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run(t, i, r, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(i.PeerCredential().Raw, credR.Raw) || !bytes.Equal(r.PeerCredential().Raw, credI.Raw) {
+		t.Fatal("peer credential does not match what was sent")
 	}
 }

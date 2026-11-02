@@ -1,6 +1,7 @@
 package edhoc
 
 import (
+	"bytes"
 	"crypto/ecdh"
 	"testing"
 
@@ -62,4 +63,55 @@ func FuzzReadIDCred(f *testing.F) {
 			t.Fatalf("ID_CRED %x did not survive a round trip: %v", id.raw, err)
 		}
 	})
+}
+
+func TestIDCredByValue(t *testing.T) {
+	a, b := []byte{0x30, 0x01}, []byte{0x30, 0x02}
+	for _, certs := range [][][]byte{{a}, {a, b}} {
+		id := X5Chain(certs...)
+		got, ok := id.X5Chain()
+		if !ok || len(got) != len(certs) || !bytes.Equal(got[0], a) {
+			t.Errorf("X5Chain round trip of %d certificates: %x, %v", len(certs), got, ok)
+		}
+		if _, ok := id.KeyID(); ok {
+			t.Error("KeyID accepted an x5chain")
+		}
+	}
+	one, _ := ParseIDCred([]byte{0xa1, 0x18, 0x21, 0x81, 0x42, 0x30, 0x01})
+	if got, ok := one.X5Chain(); !ok || len(got) != 1 || !bytes.Equal(got[0], a) {
+		t.Errorf("X5Chain of a one-element array: %x, %v", got, ok)
+	}
+	if got := X5Chain(a).Bytes(); !bytes.Equal(got, []byte{0xa1, 0x18, 0x21, 0x42, 0x30, 0x01}) {
+		t.Errorf("X5Chain(a) = %x", got)
+	}
+
+	ccs := []byte{0xa1, 0x02, 0x60}
+	id := KCCS(ccs)
+	if !bytes.Equal(id.Bytes(), []byte{0xa1, 0x0e, 0xa1, 0x02, 0x60}) {
+		t.Errorf("KCCS = %x", id.Bytes())
+	}
+	if got, ok := id.KCCS(); !ok || !bytes.Equal(got, ccs) {
+		t.Errorf("KCCS round trip: %x, %v", got, ok)
+	}
+	if _, ok := id.X5Chain(); ok {
+		t.Error("X5Chain accepted a kccs")
+	}
+
+	for _, raw := range []string{
+		"a1182180",         // { 33 : [] }
+		"a11821824230010a", // { 33 : [h'3001', 10] }
+		"a10e42a100",       // { 14 : h'a100' }
+		"a2044101182142",   // { 4 : h'01', 33 : ... } is not a single entry
+	} {
+		id, err := ParseIDCred(unhex(t, raw))
+		if err != nil {
+			continue
+		}
+		if _, ok := id.X5Chain(); ok {
+			t.Errorf("X5Chain accepted %s", raw)
+		}
+		if _, ok := id.KCCS(); ok {
+			t.Errorf("KCCS accepted %s", raw)
+		}
+	}
 }

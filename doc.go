@@ -25,6 +25,10 @@
 // turn the peer's IDCred into its Credential, then checks that the peer holds
 // the private key. Deciding whether that credential is one the application
 // trusts for this connection is up to the application (RFC 9528, Appendix D).
+// That matters most when the peer sends its credential by value, in an
+// x5chain (IDCred.X5Chain) or kccs (IDCred.KCCS): anyone can send a
+// credential, so PeerCredential must check it against a trust anchor or a
+// list of known keys before returning it.
 //
 // # Status
 //
