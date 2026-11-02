@@ -31,11 +31,16 @@ func (m Method) responderSigns() bool { return m == MethodSignSign || m == Metho
 // A Suite is an EDHOC cipher suite (RFC 9528, Section 3.6).
 type Suite int
 
-// The cipher suites this package implements. Both use AES-CCM-16-64-128 and
-// SHA-256 for EDHOC and for the application, with an 8-byte MAC.
+// The cipher suites this package implements, from RFC 9528, Section 10.2. The
+// comment after each lists the EDHOC AEAD and hash algorithms, the MAC length
+// for static DH authentication, and the key exchange and signature
+// algorithms. Suites 0 to 3 use AES-CCM-16-64-128 and SHA-256 for the
+// application.
 const (
-	Suite0 Suite = 0 // X25519, EdDSA
-	Suite2 Suite = 2 // P-256, ES256
+	Suite0 Suite = 0 // AES-CCM-16-64-128, SHA-256, 8, X25519, EdDSA
+	Suite1 Suite = 1 // AES-CCM-16-128-128, SHA-256, 16, X25519, EdDSA
+	Suite2 Suite = 2 // AES-CCM-16-64-128, SHA-256, 8, P-256, ES256
+	Suite3 Suite = 3 // AES-CCM-16-128-128, SHA-256, 16, P-256, ES256
 )
 
 // A DHKey is a static Diffie-Hellman private key. *ecdh.PrivateKey satisfies

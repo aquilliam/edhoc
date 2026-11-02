@@ -13,7 +13,11 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/aquilliam/edhoc/internal/suites"
 )
+
+var allSuites = []Suite{Suite0, Suite1, Suite2, Suite3}
 
 func trace1(t *testing.T) func(string) []byte {
 	t.Helper()
@@ -127,27 +131,29 @@ func TestTrace1(t *testing.T) {
 // given method and suite.
 func party(t *testing.T, signs bool, suite Suite, kid byte) (any, Credential) {
 	t.Helper()
+	s, ok := suiteByID(suite)
+	if !ok {
+		t.Fatalf("suite %d not supported", suite)
+	}
 	var key any
 	var pub crypto.PublicKey
 	switch {
-	case signs && suite == Suite0:
+	case signs && s.SigAlg == suites.AlgEdDSA:
 		p, k, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			t.Fatal(err)
 		}
 		key, pub = k, p
-	case signs && suite == Suite2:
+	case signs && s.SigAlg == suites.AlgES256:
 		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			t.Fatal(err)
 		}
 		key, pub = k, &k.PublicKey
+	case signs:
+		t.Fatalf("no test key for signature algorithm %d", s.SigAlg)
 	default:
-		curve := ecdh.P256()
-		if suite == Suite0 {
-			curve = ecdh.X25519()
-		}
-		k, err := curve.GenerateKey(rand.Reader)
+		k, err := s.Curve.GenerateKey(rand.Reader)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,7 +167,7 @@ func party(t *testing.T, signs bool, suite Suite, kid byte) (any, Credential) {
 }
 
 func TestMethodsAndSuites(t *testing.T) {
-	for _, suite := range []Suite{Suite0, Suite2} {
+	for _, suite := range allSuites {
 		for m := MethodSignSign; m <= MethodStaticStatic; m++ {
 			t.Run(fmt.Sprintf("suite %d method %d", suite, m), func(t *testing.T) {
 				keyI, credI := party(t, m.initiatorSigns(), suite, 0x01)

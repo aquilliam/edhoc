@@ -46,18 +46,37 @@ const (
 	tracePKRX = "bbc34960526ea4d32e940cad2a234148ddc21791a12afbcbac93622046dd44f0"
 )
 
-func TestSuite2Parameters(t *testing.T) {
-	s, ok := ByID(2)
-	if !ok {
-		t.Fatal("suite 2 not found")
+// TestRegistry checks each suite against RFC 9528, Table 6.
+func TestRegistry(t *testing.T) {
+	for _, want := range []struct {
+		id, aead, keySize, tagSize, hashLength, macLength, pubSize, sigAlg, appAEAD, appHash int
+	}{
+		{0, 10, 16, 8, 32, 8, 32, AlgEdDSA, 10, -16},
+		{1, 30, 16, 16, 32, 16, 32, AlgEdDSA, 10, -16},
+		{2, 10, 16, 8, 32, 8, 32, AlgES256, 10, -16},
+		{3, 30, 16, 16, 32, 16, 32, AlgES256, 10, -16},
+	} {
+		s, ok := ByID(want.id)
+		if !ok {
+			t.Errorf("suite %d not found", want.id)
+			continue
+		}
+		got := [...]int{s.KeySize, s.TagSize, s.HashLength(), s.MACLength, s.PublicKeySize(), s.SigAlg, s.AppAEAD, s.AppHash}
+		exp := [...]int{want.keySize, want.tagSize, want.hashLength, want.macLength, want.pubSize, want.sigAlg, want.appAEAD, want.appHash}
+		if got != exp {
+			t.Errorf("suite %d: got %v, want %v", want.id, got, exp)
+		}
+		key := make([]byte, s.KeySize)
+		a, err := s.AEAD(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.NonceSize() != s.NonceSize || a.Overhead() != s.TagSize {
+			t.Errorf("suite %d: AEAD has nonce size %d and overhead %d", want.id, a.NonceSize(), a.Overhead())
+		}
 	}
-	if s.KeySize != 16 || s.NonceSize != 13 || s.TagSize != 8 || s.MACLength != 8 ||
-		s.HashLength() != 32 || s.PublicKeySize() != 32 || s.SigAlg != -7 ||
-		s.AppAEAD != 10 || s.AppHash != -16 {
-		t.Fatalf("suite 2 parameters do not match RFC 9528, Section 10.2: %+v", s)
-	}
-	if _, ok := ByID(1); ok {
-		t.Fatal("ByID(1) found a suite that is not implemented")
+	if _, ok := ByID(23); ok {
+		t.Error("ByID(23) found a reserved suite")
 	}
 }
 

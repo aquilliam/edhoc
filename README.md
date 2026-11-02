@@ -10,9 +10,9 @@ EDHOC messages as bytes and returns bytes to send.
 
 ## Status
 
-Early. Methods 0–3 with cipher suites 0 and 2 work, and both RFC 9529 traces
-are reproduced byte for byte; the rest of the RFC is still to come. Expect breaking changes
-until v1.0.
+Early. Methods 0–3 with cipher suites 0 to 3 work, and both RFC 9529 traces
+are reproduced byte for byte; the rest of the RFC is still to come. Expect
+breaking changes until v1.0.
 
 ## Goals
 
@@ -28,7 +28,9 @@ until v1.0.
 | | Status |
 |---|---|
 | Cipher suite 0 (AES-CCM-16-64-128, SHA-256, X25519, EdDSA) | yes |
+| Cipher suite 1 (AES-CCM-16-128-128, SHA-256, X25519, EdDSA) | yes |
 | Cipher suite 2 (AES-CCM-16-64-128, SHA-256, P-256, ES256) | yes |
+| Cipher suite 3 (AES-CCM-16-128-128, SHA-256, P-256, ES256) | yes |
 | Other cipher suites | planned |
 | Methods 0–3 (signature and static DH keys, in any combination) | yes |
 | message_4, EAD, error messages, cipher suite negotiation | yes |

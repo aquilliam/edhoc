@@ -20,10 +20,11 @@ import (
 
 // COSE algorithm identifiers (RFC 9053).
 const (
-	AlgAESCCM16_64_128 = 10
-	AlgSHA256          = -16
-	AlgES256           = -7
-	AlgEdDSA           = -8
+	AlgAESCCM16_64_128  = 10
+	AlgAESCCM16_128_128 = 30
+	AlgSHA256           = -16
+	AlgES256            = -7
+	AlgEdDSA            = -8
 )
 
 // A Suite is an EDHOC cipher suite.
@@ -88,14 +89,49 @@ var suite2 = &Suite{
 	AppKeySize: 16,
 }
 
+var suite1 = &Suite{
+	ID:         1,
+	KeySize:    16,
+	NonceSize:  13,
+	TagSize:    16,
+	newAEAD:    newAESCCM(16),
+	Hash:       crypto.SHA256,
+	MACLength:  16,
+	Curve:      ecdh.X25519(),
+	SigAlg:     AlgEdDSA,
+	AppAEAD:    AlgAESCCM16_64_128,
+	AppHash:    AlgSHA256,
+	AppKeySize: 16,
+}
+
+var suite3 = &Suite{
+	ID:         3,
+	KeySize:    16,
+	NonceSize:  13,
+	TagSize:    16,
+	newAEAD:    newAESCCM(16),
+	Hash:       crypto.SHA256,
+	MACLength:  16,
+	Curve:      ecdh.P256(),
+	params:     p256,
+	SigAlg:     AlgES256,
+	AppAEAD:    AlgAESCCM16_64_128,
+	AppHash:    AlgSHA256,
+	AppKeySize: 16,
+}
+
 // ByID returns the cipher suite with the given label, or false if it is not
 // supported.
 func ByID(id int) (*Suite, bool) {
 	switch id {
 	case 0:
 		return suite0, true
+	case 1:
+		return suite1, true
 	case 2:
 		return suite2, true
+	case 3:
+		return suite3, true
 	}
 	return nil, false
 }
