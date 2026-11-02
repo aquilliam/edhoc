@@ -4,10 +4,12 @@ All notable changes to this project are listed here. Versions follow
 [semantic versioning](https://semver.org/). Until v1.0.0, minor versions may
 include breaking changes.
 
-## v0.2.0 (unreleased)
+## v0.2.0 (2026-11-02)
 
 This release changes the API so that one `Config` can serve every session on
-a side.
+a side, and lets a Responder choose its connection identifier and its
+`Config` after reading message_1. It adds helpers for EDHOC over CoAP and
+erases keys once they are no longer needed.
 
 Breaking changes:
 

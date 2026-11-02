@@ -12,9 +12,10 @@ EDHOC messages as bytes and returns bytes to send.
 
 ## Status
 
-Early. Methods 0–3 with cipher suites 0 to 6 and 24 work, and both RFC 9529 traces
-are reproduced byte for byte; the rest of the RFC is still to come. Expect
-breaking changes until v1.0.
+Early, but complete: everything in RFC 9528 except cipher suite 25. Both
+RFC 9529 traces are reproduced byte for byte, and sessions with
+[lakers](https://github.com/openwsn-berkeley/lakers) 0.6.2 succeed in both
+roles. Expect breaking changes until v1.0.
 
 ## Goals
 
@@ -46,10 +47,13 @@ breaking changes until v1.0.
 | Credentials sent by value in `x5chain` or `kccs` | yes |
 | Other ID_CRED forms | through `ParseIDCred` |
 | CoAP payloads (RFC 9528, Appendix A.2) | `CoAPMessage1`, `CoAPRequest`, `ParseCoAPRequest` |
+| A Responder config chosen per session, by method, suite or EAD_1 | `Config.GetConfig` |
 
 ## Example
 
-See [example_test.go](example_test.go) for a complete handshake. In short:
+See [example_test.go](example_test.go) for complete handshakes, a CoAP server,
+cipher suite negotiation and X.509 certificates. In short, with error handling
+left out:
 
 ```go
 cfg := &edhoc.Config{
@@ -59,15 +63,32 @@ cfg := &edhoc.Config{
 	Key:            myKey,
 	PeerCredential: lookUpPeer, // func(context.Context, *edhoc.PeerInfo) (edhoc.Credential, error)
 }
+
+// Initiator
 initiator, err := edhoc.NewInitiator(cfg, []byte{0x37}) // C_I for this session
 msg1, err := initiator.WriteMessage1()
 // send msg1, receive msg2
 ead2, err := initiator.ReadMessage2(ctx, msg2)
 msg3, err := initiator.WriteMessage3()
-// send msg3
+// send msg3, receive msg4
+ead4, err := initiator.ReadMessage4(msg4)
 session, err := initiator.Session()
 oscore, err := session.OSCORE()
+
+// Responder
+responder, err := edhoc.NewResponder(cfg)
+m1, err := responder.ReadMessage1(ctx, msg1)
+msg2, err := responder.WriteMessage2(cR) // C_R, different from m1.PeerConnID
+// send msg2, receive msg3
+ead3, err := responder.ReadMessage3(ctx, msg3)
+msg4, err := responder.WriteMessage4()
+// send msg4
+session, err := responder.Session()
 ```
+
+When a Read method fails, send `edhoc.ErrorMessage(err)` to the peer, if it is
+not nil. Without message_4, the Initiator should not use the session's keys
+until it has received a message protected with them (RFC 9528, Section 5.4.2).
 
 ## Go versions
 
