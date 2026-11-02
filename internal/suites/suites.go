@@ -37,6 +37,8 @@ const (
 	AlgEdDSA            = -8
 )
 
+var errInvalidPoint = errors.New("suites: invalid public key")
+
 // A Suite is an EDHOC cipher suite.
 type Suite struct {
 	ID int
@@ -53,10 +55,11 @@ type Suite struct {
 	// EDHOC MAC length in bytes, used with static DH authentication.
 	MACLength int
 
-	// EDHOC key exchange algorithm. params is nil for X25519, whose public
-	// keys are already in compact form.
-	Curve  ecdh.Curve
-	params *curve
+	// EDHOC key exchange algorithm. compressed is the same curve for point
+	// decompression, nil for X25519, whose public keys are already in
+	// compact form.
+	Curve      ecdh.Curve
+	compressed elliptic.Curve
 
 	// EDHOC signature algorithm.
 	SigAlg int
@@ -92,7 +95,7 @@ var suite2 = &Suite{
 	Hash:       crypto.SHA256,
 	MACLength:  8,
 	Curve:      ecdh.P256(),
-	params:     p256,
+	compressed: elliptic.P256(),
 	SigAlg:     AlgES256,
 	AppAEAD:    AlgAESCCM16_64_128,
 	AppHash:    AlgSHA256,
@@ -123,7 +126,7 @@ var suite3 = &Suite{
 	Hash:       crypto.SHA256,
 	MACLength:  16,
 	Curve:      ecdh.P256(),
-	params:     p256,
+	compressed: elliptic.P256(),
 	SigAlg:     AlgES256,
 	AppAEAD:    AlgAESCCM16_64_128,
 	AppHash:    AlgSHA256,
@@ -154,7 +157,7 @@ var suite24 = &Suite{
 	Hash:       crypto.SHA384,
 	MACLength:  16,
 	Curve:      ecdh.P384(),
-	params:     p384,
+	compressed: elliptic.P384(),
 	SigAlg:     AlgES384,
 	AppAEAD:    AlgA256GCM,
 	AppHash:    AlgSHA384,
@@ -185,7 +188,7 @@ var suite5 = &Suite{
 	Hash:       crypto.SHA256,
 	MACLength:  16,
 	Curve:      ecdh.P256(),
-	params:     p256,
+	compressed: elliptic.P256(),
 	SigAlg:     AlgES256,
 	AppAEAD:    AlgChaCha20Poly1305,
 	AppHash:    AlgSHA256,
@@ -266,10 +269,10 @@ func (s *Suite) HashLength() int {
 
 // PublicKeySize returns the length of a public key in compact representation.
 func (s *Suite) PublicKeySize() int {
-	if s.params == nil {
+	if s.compressed == nil {
 		return 32
 	}
-	return s.params.size
+	return (s.compressed.Params().BitSize + 7) / 8
 }
 
 // GenerateKey returns a fresh ephemeral key pair.
@@ -280,23 +283,34 @@ func (s *Suite) GenerateKey() (*ecdh.PrivateKey, error) {
 // CompactPublicKey returns the compact representation of a public key
 // (RFC 9528, Appendix B): the x-coordinate alone.
 func (s *Suite) CompactPublicKey(pub *ecdh.PublicKey) []byte {
-	if s.params == nil {
+	if s.compressed == nil {
 		return pub.Bytes()
 	}
-	return pub.Bytes()[1 : 1+s.params.size]
+	return pub.Bytes()[1 : 1+s.PublicKeySize()]
 }
 
 // ParsePublicKey parses a public key in compact representation. For P-256 and
-// P-384 it rejects an x-coordinate that is not reduced modulo p or that is not on the
-// curve. An X25519 key of low order is caught later: ECDH with it fails.
+// P-384 it rejects an x-coordinate that is not reduced modulo p or that is not
+// on the curve. Either square root gives the same ECDH result, so the point is
+// decompressed with an even y (RFC 9528, Appendix B). An X25519 key of low
+// order is caught later: ECDH with it fails.
 func (s *Suite) ParsePublicKey(x []byte) (*ecdh.PublicKey, error) {
-	if s.params == nil {
-		if len(x) != 32 {
-			return nil, errInvalidPoint
-		}
+	n := s.PublicKeySize()
+	if len(x) != n {
+		return nil, errInvalidPoint
+	}
+	if s.compressed == nil {
 		return s.Curve.NewPublicKey(x)
 	}
-	return s.params.decompress(s.Curve, x)
+	px, py := elliptic.UnmarshalCompressed(s.compressed, append([]byte{2}, x...))
+	if px == nil {
+		return nil, errInvalidPoint
+	}
+	point := make([]byte, 1+2*n)
+	point[0] = 4
+	px.FillBytes(point[1 : 1+n])
+	py.FillBytes(point[1+n:])
+	return s.Curve.NewPublicKey(point)
 }
 
 // Sign signs msg with key using the EDHOC signature algorithm and returns the
