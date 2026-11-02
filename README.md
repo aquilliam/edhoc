@@ -56,12 +56,12 @@ cfg := &edhoc.Config{
 	Suites:         []edhoc.Suite{edhoc.Suite2},
 	Credential:     myCredential,
 	Key:            myKey,
-	PeerCredential: lookUpPeer, // func(*edhoc.PeerInfo) (edhoc.Credential, error)
+	PeerCredential: lookUpPeer, // func(context.Context, *edhoc.PeerInfo) (edhoc.Credential, error)
 }
 initiator, err := edhoc.NewInitiator(cfg, []byte{0x37}) // C_I for this session
 msg1, err := initiator.WriteMessage1()
 // send msg1, receive msg2
-err = initiator.ReadMessage2(msg2)
+err = initiator.ReadMessage2(ctx, msg2)
 msg3, err := initiator.WriteMessage3()
 // send msg3
 session, err := initiator.Session()

@@ -61,7 +61,7 @@ func (r *Responder) PeerEAD() []EAD {
 // Session returns the session once ReadMessage3 has succeeded.
 func (r *Responder) Session() (*Session, error) {
 	if r.session == nil || r.state == responderFailed {
-		return nil, errState
+		return nil, ErrWrongState
 	}
 	return r.session, nil
 }

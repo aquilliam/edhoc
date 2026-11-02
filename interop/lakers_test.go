@@ -5,6 +5,7 @@ package interop
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/ecdh"
 	"encoding/hex"
 	"fmt"
@@ -92,8 +93,8 @@ func credential(t *testing.T, raw []byte, byValue bool) edhoc.Credential {
 
 // lookup accepts the peer's credential by kid or by value, as long as it is
 // the expected one.
-func lookup(want edhoc.Credential) func(*edhoc.PeerInfo) (edhoc.Credential, error) {
-	return func(p *edhoc.PeerInfo) (edhoc.Credential, error) {
+func lookup(want edhoc.Credential) func(context.Context, *edhoc.PeerInfo) (edhoc.Credential, error) {
+	return func(_ context.Context, p *edhoc.PeerInfo) (edhoc.Credential, error) {
 		if ccs, ok := p.ID.KCCS(); ok && bytes.Equal(ccs, want.Raw) {
 			return want, nil
 		}
@@ -156,7 +157,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 			t.Fatal(err)
 		}
 		p.send(msg1)
-		if err := i.ReadMessage2(p.recv()); err != nil {
+		if err := i.ReadMessage2(t.Context(), p.recv()); err != nil {
 			t.Fatal(err)
 		}
 		msg3, err := i.WriteMessage3()
@@ -184,7 +185,7 @@ func testLakers(t *testing.T, python string, goInitiates bool, transfer string) 
 			t.Fatal(err)
 		}
 		p.send(msg2)
-		if err := r.ReadMessage3(p.recv()); err != nil {
+		if err := r.ReadMessage3(t.Context(), p.recv()); err != nil {
 			t.Fatal(err)
 		}
 		msg4, err := r.WriteMessage4()

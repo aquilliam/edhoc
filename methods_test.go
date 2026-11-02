@@ -2,6 +2,7 @@ package edhoc
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdh"
 	"crypto/ecdsa"
@@ -96,12 +97,12 @@ func TestTrace1(t *testing.T) {
 	}
 	msg2, err := r.WriteMessage2()
 	check(t, "message_2", msg2, err, tr("message_2 (CBOR Sequence)"))
-	if err := i.ReadMessage2(msg2); err != nil {
+	if err := i.ReadMessage2(t.Context(), msg2); err != nil {
 		t.Fatal(err)
 	}
 	msg3, err := i.WriteMessage3()
 	check(t, "message_3", msg3, err, tr("message_3 (CBOR Sequence)"))
-	if err := r.ReadMessage3(msg3); err != nil {
+	if err := r.ReadMessage3(t.Context(), msg3); err != nil {
 		t.Fatal(err)
 	}
 	msg4, err := r.WriteMessage4()
@@ -248,14 +249,14 @@ func TestWrongKeyType(t *testing.T) {
 // in ID_CRED and the peer builds the Credential from it.
 func TestCredentialsByValue(t *testing.T) {
 	tr := trace1(t)
-	fromX5Chain := func(p *PeerInfo) (Credential, error) {
+	fromX5Chain := func(_ context.Context, p *PeerInfo) (Credential, error) {
 		chain, ok := p.ID.X5Chain()
 		if !ok {
 			return Credential{}, ErrUnknownCredential
 		}
 		return NewX509(chain[0])
 	}
-	fromKCCS := func(p *PeerInfo) (Credential, error) {
+	fromKCCS := func(_ context.Context, p *PeerInfo) (Credential, error) {
 		ccs, ok := p.ID.KCCS()
 		if !ok {
 			return Credential{}, ErrUnknownCredential
@@ -284,7 +285,7 @@ func TestCredentialsByValue(t *testing.T) {
 }
 
 func testByValue(t *testing.T, suite Suite, m Method, credI Credential, keyI any, credR Credential, keyR any,
-	peer func(*PeerInfo) (Credential, error)) {
+	peer func(context.Context, *PeerInfo) (Credential, error)) {
 	i, err := NewInitiator(&Config{Method: m, Suites: []Suite{suite},
 		Credential: credI, Key: keyI, PeerCredential: peer}, pairCI)
 	if err != nil {

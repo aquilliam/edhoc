@@ -85,7 +85,7 @@ func (i *Initiator) PeerEAD() []EAD {
 // Session returns the session once WriteMessage3 has succeeded.
 func (i *Initiator) Session() (*Session, error) {
 	if i.session == nil || i.state == initiatorFailed {
-		return nil, errState
+		return nil, ErrWrongState
 	}
 	return i.session, nil
 }

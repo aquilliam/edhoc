@@ -2,6 +2,7 @@ package edhoc_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"fmt"
@@ -31,7 +32,7 @@ func Example() {
 	// Each side knows the other's credential in advance and looks it up by
 	// the ID_CRED it is sent.
 	known := map[edhoc.IDCred]edhoc.Credential{credI.ID: credI, credR.ID: credR}
-	lookUp := func(p *edhoc.PeerInfo) (edhoc.Credential, error) {
+	lookUp := func(_ context.Context, p *edhoc.PeerInfo) (edhoc.Credential, error) {
 		c, ok := known[p.ID]
 		if !ok {
 			return edhoc.Credential{}, edhoc.ErrUnknownCredential
@@ -75,14 +76,14 @@ func Example() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := initiator.ReadMessage2(msg2); err != nil {
+	if err := initiator.ReadMessage2(context.Background(), msg2); err != nil {
 		log.Fatal(err)
 	}
 	msg3, err := initiator.WriteMessage3()
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := responder.ReadMessage3(msg3); err != nil {
+	if err := responder.ReadMessage3(context.Background(), msg3); err != nil {
 		log.Fatal(err)
 	}
 

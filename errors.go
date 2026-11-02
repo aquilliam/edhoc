@@ -7,12 +7,32 @@ import (
 	"github.com/aquilliam/edhoc/internal/cbor"
 )
 
-// ERR_CODE values (RFC 9528, Section 6).
+// An ErrCode is an ERR_CODE value of an EDHOC error message (RFC 9528,
+// Section 6).
+type ErrCode int
+
+// The ERR_CODE values defined in RFC 9528, Section 6.
 const (
-	ErrCodeUnspecified        = 1
-	ErrCodeWrongSelectedSuite = 2
-	ErrCodeUnknownCredential  = 3
+	ErrCodeUnspecified        ErrCode = 1
+	ErrCodeWrongSelectedSuite ErrCode = 2
+	ErrCodeUnknownCredential  ErrCode = 3
 )
+
+func (c ErrCode) String() string {
+	switch c {
+	case ErrCodeUnspecified:
+		return "unspecified error"
+	case ErrCodeWrongSelectedSuite:
+		return "wrong selected cipher suite"
+	case ErrCodeUnknownCredential:
+		return "unknown credential referenced"
+	}
+	return fmt.Sprintf("error code %d", int(c))
+}
+
+// ErrWrongState is returned when a method of an Initiator or Responder is
+// called out of order, or after the session has failed.
+var ErrWrongState = errors.New("edhoc: method called in the wrong state")
 
 // ErrUnknownCredential is returned by a Config.PeerCredential function when
 // the peer refers to a credential this side does not have.
@@ -23,7 +43,7 @@ var ErrUnknownCredential = errors.New("edhoc: unknown credential")
 // the peer.
 type Error struct {
 	// Code is the ERR_CODE to send.
-	Code int
+	Code ErrCode
 	// Suites is SUITES_R, sent with ErrCodeWrongSelectedSuite.
 	Suites []Suite
 
@@ -50,7 +70,7 @@ func wrapf(err error, format string, args ...any) *Error {
 
 // A PeerError is an EDHOC error message received from the peer.
 type PeerError struct {
-	Code int
+	Code ErrCode
 	// Info is the diagnostic text sent with ErrCodeUnspecified.
 	Info string
 	// Suites is SUITES_R, sent with ErrCodeWrongSelectedSuite. Use it as
@@ -67,7 +87,7 @@ func (e *PeerError) Error() string {
 	case ErrCodeUnknownCredential:
 		return "edhoc: peer does not know the credential we referred to"
 	}
-	return fmt.Sprintf("edhoc: peer sent error code %d", e.Code)
+	return fmt.Sprintf("edhoc: peer sent error code %d", int(e.Code))
 }
 
 // ErrorMessage returns the EDHOC error message to send to the peer after err,
@@ -106,8 +126,8 @@ func parseErrorMessage(msg []byte) error {
 	if err != nil {
 		return errors.New("edhoc: malformed error message")
 	}
-	pe := &PeerError{Code: int(code)}
-	switch code {
+	pe := &PeerError{Code: ErrCode(code)}
+	switch pe.Code {
 	case ErrCodeUnspecified:
 		pe.Info, err = d.Text()
 	case ErrCodeWrongSelectedSuite:

@@ -2,6 +2,7 @@ package edhoc
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdh"
 	"crypto/subtle"
@@ -10,10 +11,6 @@ import (
 	"github.com/aquilliam/edhoc/internal/cbor"
 	"github.com/aquilliam/edhoc/internal/suites"
 )
-
-// errState is returned when a method is called out of order or after the
-// session has failed.
-var errState = errors.New("edhoc: method called in the wrong state")
 
 // handshake is the protocol state shared by the Initiator and the Responder.
 type handshake struct {
@@ -75,8 +72,8 @@ func (h *handshake) signer() crypto.Signer {
 // lookupPeer asks the application for the peer's credential and returns the
 // authentication key in it: a signature key if the peer signs, otherwise a
 // static DH key.
-func (h *handshake) lookupPeer(id IDCred, ead []EAD, ownConnID, peerConnID []byte, peerSigns bool) (crypto.PublicKey, error) {
-	cred, err := h.cfg.PeerCredential(&PeerInfo{
+func (h *handshake) lookupPeer(ctx context.Context, id IDCred, ead []EAD, ownConnID, peerConnID []byte, peerSigns bool) (crypto.PublicKey, error) {
+	cred, err := h.cfg.PeerCredential(ctx, &PeerInfo{
 		ID:         id,
 		EAD:        ead,
 		ConnID:     bytes.Clone(ownConnID),

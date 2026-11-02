@@ -11,7 +11,7 @@ import (
 // EAD_1.
 func (i *Initiator) WriteMessage1(ead ...EAD) ([]byte, error) {
 	if i.state != initiatorStart {
-		return nil, errState
+		return nil, ErrWrongState
 	}
 	h := &i.h
 	x, err := h.ephemeral()
@@ -34,7 +34,7 @@ func (i *Initiator) WriteMessage1(ead ...EAD) ([]byte, error) {
 // the Initiator can try again.
 func (r *Responder) ReadMessage1(msg []byte) error {
 	if r.state != responderStart {
-		return errState
+		return ErrWrongState
 	}
 	if err := r.readMessage1(msg); err != nil {
 		return r.fail(err)

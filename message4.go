@@ -9,7 +9,7 @@ import (
 // Initiator any application data protected with the new keys.
 func (r *Responder) WriteMessage4(ead ...EAD) ([]byte, error) {
 	if r.state != responderReadMessage3 {
-		return nil, errState
+		return nil, ErrWrongState
 	}
 	h := &r.h
 	ct, err := h.encrypt0(true, h.prk4e3m, labelK4, labelIV4, h.th4, appendEAD(nil, ead))
@@ -25,7 +25,7 @@ func (r *Responder) WriteMessage4(ead ...EAD) ([]byte, error) {
 // If the Responder sent an error message instead, the error is a *PeerError.
 func (i *Initiator) ReadMessage4(msg []byte) error {
 	if i.state != initiatorWroteMessage3 {
-		return errState
+		return ErrWrongState
 	}
 	if isErrorMessage(msg) {
 		return i.fail(parseErrorMessage(msg))

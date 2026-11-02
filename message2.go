@@ -2,6 +2,7 @@ package edhoc
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdh"
 	"crypto/subtle"
 
@@ -12,7 +13,7 @@ import (
 // EAD_2.
 func (r *Responder) WriteMessage2(ead ...EAD) ([]byte, error) {
 	if r.state != responderReadMessage1 {
-		return nil, errState
+		return nil, ErrWrongState
 	}
 	msg, err := r.writeMessage2(ead)
 	if err != nil {
@@ -82,24 +83,24 @@ func (r *Responder) writeMessage2(ead []EAD) ([]byte, error) {
 }
 
 // ReadMessage2 processes message_2 (RFC 9528, Section 5.3.3). It calls
-// Config.PeerCredential to find the Responder's credential and checks the
-// Responder's proof of possession of the key in it. If the Responder sent an
-// error message instead, the error is a *PeerError.
-func (i *Initiator) ReadMessage2(msg []byte) error {
+// Config.PeerCredential with ctx to find the Responder's credential and
+// checks the Responder's proof of possession of the key in it. If the
+// Responder sent an error message instead, the error is a *PeerError.
+func (i *Initiator) ReadMessage2(ctx context.Context, msg []byte) error {
 	if i.state != initiatorWroteMessage1 {
-		return errState
+		return ErrWrongState
 	}
 	if isErrorMessage(msg) {
 		return i.fail(parseErrorMessage(msg))
 	}
-	if err := i.readMessage2(msg); err != nil {
+	if err := i.readMessage2(ctx, msg); err != nil {
 		return i.fail(err)
 	}
 	i.state = initiatorReadMessage2
 	return nil
 }
 
-func (i *Initiator) readMessage2(msg []byte) error {
+func (i *Initiator) readMessage2(ctx context.Context, msg []byte) error {
 	h := &i.h
 	body, err := readCiphertext(msg, "message_2")
 	if err != nil {
@@ -151,7 +152,7 @@ func (i *Initiator) readMessage2(msg []byte) error {
 	if err != nil {
 		return err
 	}
-	peerKey, err := h.lookupPeer(idCredR, accepted, h.cI, h.cR, signs)
+	peerKey, err := h.lookupPeer(ctx, idCredR, accepted, h.cI, h.cR, signs)
 	if err != nil {
 		return err
 	}

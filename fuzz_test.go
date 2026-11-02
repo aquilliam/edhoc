@@ -112,7 +112,7 @@ func FuzzPlaintext2(f *testing.F) {
 		body := make([]byte, len(gY)+len(pt))
 		copy(body, gY)
 		subtle.XORBytes(body[len(gY):], pt, keystream)
-		if err := i.ReadMessage2(cbor.AppendBytes(nil, body)); err != nil {
+		if err := i.ReadMessage2(t.Context(), cbor.AppendBytes(nil, body)); err != nil {
 			ErrorMessage(err)
 			return
 		}
@@ -132,7 +132,7 @@ func FuzzPlaintext3(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := r.ReadMessage3(cbor.AppendBytes(nil, ct)); err != nil {
+		if err := r.ReadMessage3(t.Context(), cbor.AppendBytes(nil, ct)); err != nil {
 			ErrorMessage(err)
 			return
 		}
@@ -148,7 +148,7 @@ func FuzzMessage4(f *testing.F) {
 	f.Add(fs.errMsg)
 	f.Fuzz(func(t *testing.T, msg []byte) {
 		i := fs.initiator(t)
-		if err := i.ReadMessage2(fs.msg2); err != nil {
+		if err := i.ReadMessage2(t.Context(), fs.msg2); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := i.WriteMessage3(); err != nil {

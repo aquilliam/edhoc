@@ -1,6 +1,7 @@
 package edhoc
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdh"
 	"crypto/ecdsa"
@@ -24,6 +25,20 @@ const (
 	MethodStaticStatic Method = 3 // both use static DH
 )
 
+func (m Method) String() string {
+	switch m {
+	case MethodSignSign:
+		return "sign-sign"
+	case MethodSignStatic:
+		return "sign-static"
+	case MethodStaticSign:
+		return "static-sign"
+	case MethodStaticStatic:
+		return "static-static"
+	}
+	return fmt.Sprintf("method %d", int(m))
+}
+
 func (m Method) initiatorSigns() bool { return m == MethodSignSign || m == MethodSignStatic }
 func (m Method) responderSigns() bool { return m == MethodSignSign || m == MethodStaticSign }
 
@@ -45,6 +60,27 @@ const (
 	Suite6  Suite = 6  // A128GCM, SHA-256, 16, X25519, ES256
 	Suite24 Suite = 24 // A256GCM, SHA-384, 16, P-384, ES384
 )
+
+var suiteNames = map[Suite]string{
+	Suite0:  "AES-CCM-16-64-128, SHA-256, 8, X25519, EdDSA",
+	Suite1:  "AES-CCM-16-128-128, SHA-256, 16, X25519, EdDSA",
+	Suite2:  "AES-CCM-16-64-128, SHA-256, 8, P-256, ES256",
+	Suite3:  "AES-CCM-16-128-128, SHA-256, 16, P-256, ES256",
+	Suite4:  "ChaCha20/Poly1305, SHA-256, 16, X25519, EdDSA",
+	Suite5:  "ChaCha20/Poly1305, SHA-256, 16, P-256, ES256",
+	Suite6:  "A128GCM, SHA-256, 16, X25519, ES256",
+	Suite24: "A256GCM, SHA-384, 16, P-384, ES384",
+}
+
+// String returns the suite's label and, for a suite this package implements,
+// its algorithms, such as "suite 2 (AES-CCM-16-64-128, SHA-256, 8, P-256,
+// ES256)".
+func (s Suite) String() string {
+	if name, ok := suiteNames[s]; ok {
+		return fmt.Sprintf("suite %d (%s)", int(s), name)
+	}
+	return fmt.Sprintf("suite %d", int(s))
+}
 
 // A DHKey is a static Diffie-Hellman private key. *ecdh.PrivateKey satisfies
 // it; so can a key held in hardware.
@@ -101,10 +137,11 @@ type Config struct {
 	// PeerCredential returns the peer's credential for the ID_CRED field it
 	// sent, or an error wrapping ErrUnknownCredential if there is no such
 	// credential. It is called during ReadMessage2 on the Initiator and
-	// ReadMessage3 on the Responder, before the peer has been authenticated,
-	// so nothing in p is proof of anything. The returned credential is the one
-	// the peer must then prove it holds the key for.
-	PeerCredential func(p *PeerInfo) (Credential, error)
+	// ReadMessage3 on the Responder, with the context passed to them, before
+	// the peer has been authenticated, so nothing in p is proof of anything.
+	// The returned credential is the one the peer must then prove it holds
+	// the key for.
+	PeerCredential func(ctx context.Context, p *PeerInfo) (Credential, error)
 
 	// EADLabels lists the absolute values of the EAD labels the application
 	// handles. A received critical EAD item with any other label fails the

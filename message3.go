@@ -1,6 +1,7 @@
 package edhoc
 
 import (
+	"context"
 	"crypto/ecdh"
 
 	"github.com/aquilliam/edhoc/internal/cbor"
@@ -10,7 +11,7 @@ import (
 // EAD_3. Once it succeeds, Session returns the session.
 func (i *Initiator) WriteMessage3(ead ...EAD) ([]byte, error) {
 	if i.state != initiatorReadMessage2 {
-		return nil, errState
+		return nil, ErrWrongState
 	}
 	msg, err := i.writeMessage3(ead)
 	if err != nil {
@@ -70,25 +71,25 @@ func (i *Initiator) writeMessage3(ead []EAD) ([]byte, error) {
 }
 
 // ReadMessage3 processes message_3 (RFC 9528, Section 5.4.3). It calls
-// Config.PeerCredential to find the Initiator's credential and checks the
-// Initiator's proof of possession of the key in it. Once it succeeds, Session
-// returns the session. If the Initiator sent an error message instead, the
-// error is a *PeerError.
-func (r *Responder) ReadMessage3(msg []byte) error {
+// Config.PeerCredential with ctx to find the Initiator's credential and
+// checks the Initiator's proof of possession of the key in it. Once it
+// succeeds, Session returns the session. If the Initiator sent an error
+// message instead, the error is a *PeerError.
+func (r *Responder) ReadMessage3(ctx context.Context, msg []byte) error {
 	if r.state != responderWroteMessage2 {
-		return errState
+		return ErrWrongState
 	}
 	if isErrorMessage(msg) {
 		return r.fail(parseErrorMessage(msg))
 	}
-	if err := r.readMessage3(msg); err != nil {
+	if err := r.readMessage3(ctx, msg); err != nil {
 		return r.fail(err)
 	}
 	r.state = responderReadMessage3
 	return nil
 }
 
-func (r *Responder) readMessage3(msg []byte) error {
+func (r *Responder) readMessage3(ctx context.Context, msg []byte) error {
 	h := &r.h
 	ct, err := readCiphertext(msg, "message_3")
 	if err != nil {
@@ -118,7 +119,7 @@ func (r *Responder) readMessage3(msg []byte) error {
 	if err != nil {
 		return err
 	}
-	peerKey, err := h.lookupPeer(idCredI, accepted, h.cR, h.cI, signs)
+	peerKey, err := h.lookupPeer(ctx, idCredI, accepted, h.cR, h.cI, signs)
 	if err != nil {
 		return err
 	}
