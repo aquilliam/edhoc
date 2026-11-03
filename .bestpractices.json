@@ -114,7 +114,7 @@
   "static_analysis_often_status": "Met",
   "static_analysis_often_justification": "Static analysis runs on every push and pull request.",
   "dynamic_analysis_status": "Met",
-  "dynamic_analysis_justification": "Go fuzz targets cover the CBOR decoder, ID_CRED and CWT Claims Set parsing, CoAP payloads, AES-CCM and every EDHOC message, and tests run with the race detector. An interop test against lakers covers both roles.",
+  "dynamic_analysis_justification": "Go fuzz targets cover the CBOR decoder, ID_CRED and CWT Claims Set parsing, CoAP payloads, AES-CCM and every EDHOC message, and tests run with the race detector. Interop tests against lakers, uoscore-uedhoc and libedhoc cover both roles.",
   "dynamic_analysis_unsafe_status": "N/A",
   "dynamic_analysis_unsafe_justification": "The code is pure Go: no unsafe, no cgo and no assembly.",
   "dynamic_analysis_enable_assertions_status": "Met",
