@@ -35,12 +35,11 @@ func (r *Responder) WriteMessage2(connID []byte, ead ...EAD) ([]byte, error) {
 
 func (r *Responder) writeMessage2(ead []EAD) ([]byte, error) {
 	h := &r.h
-	y, err := h.ephemeral()
+	gY, gXY, err := h.writeGY()
 	if err != nil {
 		return nil, err
 	}
-	gY := h.suite.CompactPublicKey(y.PublicKey())
-	if err := h.derivePRK2e(gY); err != nil {
+	if err := h.derivePRK2e(gY, gXY); err != nil {
 		return nil, err
 	}
 	signs := h.cfg.Method.responderSigns()
@@ -115,16 +114,16 @@ func (i *Initiator) readMessage2(ctx context.Context, msg []byte) ([]EAD, error)
 	if err != nil {
 		return nil, err
 	}
-	n := h.suite.PublicKeySize()
+	n := h.suite.GYSize()
 	if len(body) <= n {
 		return nil, failf("malformed message_2: too short")
 	}
 	gY, ct := body[:n], body[n:]
-	h.peerEph, err = h.suite.ParsePublicKey(gY)
+	gXY, err := h.readGY(gY)
 	if err != nil {
-		return nil, wrapf(err, "invalid G_Y")
+		return nil, err
 	}
-	if err := h.derivePRK2e(gY); err != nil {
+	if err := h.derivePRK2e(gY, gXY); err != nil {
 		return nil, err
 	}
 	keystream, err := kdf(h.suite, h.prk2e, labelKeystream2, h.th2, len(ct))

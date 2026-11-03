@@ -46,7 +46,8 @@ const (
 	tracePKRX = "bbc34960526ea4d32e940cad2a234148ddc21791a12afbcbac93622046dd44f0"
 )
 
-// TestRegistry checks each suite against RFC 9528, Table 6.
+// TestRegistry checks each suite against RFC 9528, Table 6, and suite -24
+// against TBD1 in draft-ietf-lake-pqsuites-02, Table 3.
 func TestRegistry(t *testing.T) {
 	for _, want := range []struct {
 		id, aead, keySize, tagSize, hashLength, macLength, pubSize, sigAlg, appAEAD, appHash int
@@ -59,6 +60,7 @@ func TestRegistry(t *testing.T) {
 		{5, 24, 32, 16, 32, 16, 32, AlgES256, 24, -16},
 		{6, 1, 16, 16, 32, 16, 32, AlgES256, 1, -16},
 		{24, 3, 32, 16, 48, 16, 48, AlgES384, 3, -43},
+		{-24, 30, 16, 16, 64, 16, 800, AlgMLDSA44, 10, -16},
 	} {
 		s, ok := ByID(want.id)
 		if !ok {

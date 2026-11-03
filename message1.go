@@ -15,13 +15,13 @@ func (i *Initiator) WriteMessage1(ead ...EAD) ([]byte, error) {
 		return nil, ErrWrongState
 	}
 	h := &i.h
-	x, err := h.ephemeral()
+	gX, err := h.writeGX()
 	if err != nil {
 		return nil, i.fail(err)
 	}
 	b := cbor.AppendInt(nil, int64(h.cfg.Method))
 	b = appendSuites(b, i.suitesI)
-	b = cbor.AppendBytes(b, h.suite.CompactPublicKey(x.PublicKey()))
+	b = cbor.AppendBytes(b, gX)
 	b = cbor.AppendID(b, h.cI)
 	b = appendEAD(b, ead)
 	h.message1 = b
@@ -89,8 +89,7 @@ func (r *Responder) readMessage1(ctx context.Context, msg []byte) (*Message1Info
 			Info: "a cipher suite preferred over the selected one is supported"}
 	}
 	h.suite, _ = suiteByID(suitesI[first])
-	h.peerEph, err = h.suite.ParsePublicKey(gX)
-	if err != nil {
+	if err := h.readGX(gX); err != nil {
 		return nil, wrapf(err, "invalid G_X")
 	}
 

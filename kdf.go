@@ -1,8 +1,6 @@
 package edhoc
 
 import (
-	"crypto/hkdf"
-
 	"github.com/aquilliam/edhoc/internal/cbor"
 	"github.com/aquilliam/edhoc/internal/suites"
 )
@@ -22,16 +20,16 @@ const (
 	labelPRKExporter = 10
 )
 
-// extract is EDHOC_Extract (RFC 9528, Section 4.1.1) for a SHA-2 hash.
+// extract is EDHOC_Extract (RFC 9528, Section 4.1.1).
 func extract(s *suites.Suite, salt, ikm []byte) ([]byte, error) {
-	return hkdf.Extract(s.Hash.New, ikm, salt)
+	return s.Extract(salt, ikm)
 }
 
-// kdf is EDHOC_KDF (RFC 9528, Section 4.1.2) for a SHA-2 hash:
-// HKDF-Expand(PRK, info, length) with info = (info_label, context, length).
+// kdf is EDHOC_KDF (RFC 9528, Section 4.1.2): EDHOC_Expand(PRK, info,
+// length) with info = (info_label, context, length).
 func kdf(s *suites.Suite, prk []byte, label int, context []byte, length int) ([]byte, error) {
 	info := cbor.AppendInt(nil, int64(label))
 	info = cbor.AppendBytes(info, context)
 	info = cbor.AppendUint(info, uint64(length))
-	return hkdf.Expand(s.Hash.New, prk, string(info), length)
+	return s.Expand(prk, info, length)
 }
