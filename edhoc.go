@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/aquilliam/edhoc/internal/suites"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa44"
 )
 
 // A Method is an EDHOC authentication method (RFC 9528, Section 3.2). It says
@@ -59,6 +60,10 @@ const (
 	Suite5  Suite = 5  // ChaCha20/Poly1305, SHA-256, 16, P-256, ES256
 	Suite6  Suite = 6  // A128GCM, SHA-256, 16, X25519, ES256
 	Suite24 Suite = 24 // A256GCM, SHA-384, 16, P-384, ES384
+
+	// SuiteMinus24 is cipher suite TBD1 of draft-ietf-lake-pqsuites-02
+	// under a private use label. It works only with MethodSignSign.
+	SuiteMinus24 Suite = -24 // AES-CCM-16-128-128, SHAKE256, 16, ML-KEM-512, ML-DSA-44
 )
 
 var suiteNames = map[Suite]string{
@@ -70,6 +75,8 @@ var suiteNames = map[Suite]string{
 	Suite5:  "ChaCha20/Poly1305, SHA-256, 16, P-256, ES256",
 	Suite6:  "A128GCM, SHA-256, 16, X25519, ES256",
 	Suite24: "A256GCM, SHA-384, 16, P-384, ES384",
+
+	SuiteMinus24: "AES-CCM-16-128-128, SHAKE256, 16, ML-KEM-512, ML-DSA-44",
 }
 
 // String returns the suite's label and, for a suite this package implements,
@@ -147,10 +154,10 @@ type Config struct {
 
 	// Key is the private authentication key matching Credential: a
 	// crypto.Signer if this side authenticates with a signature, a DHKey if
-	// it uses static DH. Signing keys are ed25519.PrivateKey for EdDSA and
-	// *ecdsa.PrivateKey on P-256 for ES256 or on P-384 for ES384, or anything
-	// else that implements crypto.Signer with those public keys, such as a key
-	// in a KMS. Static DH keys must be on the curve of the suite. An
+	// it uses static DH. Signing keys are ed25519.PrivateKey for EdDSA,
+	// *ecdsa.PrivateKey on P-256 for ES256 or on P-384 for ES384 and
+	// *mldsa44.PrivateKey for ML-DSA-44, or anything else that implements
+	// crypto.Signer with those public keys, such as a key in a KMS. Static DH keys must be on the curve of the suite. An
 	// Initiator's key must suit the cipher suite it selects, and a
 	// Responder's every suite in Suites; a Responder that needs different
 	// keys for different suites uses GetConfig.
@@ -286,6 +293,10 @@ func dhPublicKey(pub crypto.PublicKey, curve ecdh.Curve) (*ecdh.PublicKey, bool)
 // signaturePublicKey returns pub in the form the suite's signature algorithm
 // verifies with.
 func signaturePublicKey(pub crypto.PublicKey, s *suites.Suite) (crypto.PublicKey, bool) {
+	if s.SigAlg == suites.AlgMLDSA44 {
+		k, ok := pub.(*mldsa44.PublicKey)
+		return k, ok
+	}
 	if s.SigAlg == suites.AlgEdDSA {
 		k, ok := pub.(ed25519.PublicKey)
 		return k, ok && len(k) == ed25519.PublicKeySize
