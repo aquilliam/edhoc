@@ -104,11 +104,11 @@ func FuzzPlaintext2(f *testing.F) {
 	f.Fuzz(func(t *testing.T, pt []byte) {
 		i := fs.initiator(t)
 		h := i.h
-		var err error
-		if h.peerEph, err = h.suite.ParsePublicKey(gY); err != nil {
+		gXY, err := h.readGY(gY)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := h.derivePRK2e(gY); err != nil {
+		if err := h.derivePRK2e(gY, gXY); err != nil {
 			t.Fatal(err)
 		}
 		keystream, err := kdf(h.suite, h.prk2e, labelKeystream2, h.th2, len(pt))

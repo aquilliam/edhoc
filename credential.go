@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aquilliam/edhoc/internal/cbor"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa44"
 )
 
 // COSE header parameter and key labels (RFC 9052, Sections 3.1 and 7.1).
@@ -25,11 +26,15 @@ const (
 
 	keyKty     = 1
 	keyKID     = 2
+	keyAlg     = 3
 	keyCrv     = -1
+	keyPub     = -1
 	keyX       = -2
 	keyY       = -3
 	ktyOKP     = 1
 	ktyEC2     = 2
+	ktyAKP     = 7
+	algMLDSA44 = -48
 	crvP256    = 1
 	crvP384    = 2
 	crvX25519  = 4
@@ -230,8 +235,9 @@ type Credential struct {
 	Raw []byte
 
 	// PublicKey is the authentication key in the credential: an
-	// ed25519.PublicKey for EdDSA, an *ecdh.PublicKey for X25519, and either
-	// an *ecdsa.PublicKey or an *ecdh.PublicKey on P-256 or P-384.
+	// ed25519.PublicKey for EdDSA, an *ecdh.PublicKey for X25519, either
+	// an *ecdsa.PublicKey or an *ecdh.PublicKey on P-256 or P-384, and an
+	// *mldsa44.PublicKey for ML-DSA-44.
 	PublicKey crypto.PublicKey
 }
 
@@ -259,9 +265,10 @@ var errCCS = errors.New("edhoc: malformed CWT Claims Set")
 // kid, the credential's ID is { 4 : kid }; otherwise the caller sets ID. To
 // send the claims set by value, set ID to KCCS(ccs).
 //
-// Supported keys are P-256 and P-384 (EC2 with both coordinates), X25519 and
-// Ed25519. P-256, P-384 and X25519 keys come back as *ecdh.PublicKey, Ed25519
-// keys as ed25519.PublicKey.
+// Supported keys are P-256 and P-384 (EC2 with both coordinates), X25519,
+// Ed25519 and ML-DSA-44 (AKP, RFC 9964). P-256, P-384 and X25519 keys come
+// back as *ecdh.PublicKey, Ed25519 keys as ed25519.PublicKey and ML-DSA-44
+// keys as *mldsa44.PublicKey.
 func ParseCCS(ccs []byte) (Credential, error) {
 	d := cbor.NewDecoder(ccs)
 	if _, err := cbor.NewDecoder(ccs).Raw(); err != nil {
@@ -300,8 +307,8 @@ func ParseCCS(ccs []byte) (Credential, error) {
 // NewCCS returns a credential for a raw public key: a CWT Claims Set with an
 // optional subject claim and a COSE_Key in a 'cnf' claim (RFC 9528, Section
 // 3.5.2). The credential's ID is { 4 : kid }. pub may be a P-256 or P-384 key
-// (*ecdh.PublicKey or *ecdsa.PublicKey), an X25519 key (*ecdh.PublicKey) or
-// an ed25519.PublicKey.
+// (*ecdh.PublicKey or *ecdsa.PublicKey), an X25519 key (*ecdh.PublicKey), an
+// ed25519.PublicKey or an *mldsa44.PublicKey.
 func NewCCS(subject string, kid []byte, pub crypto.PublicKey) (Credential, error) {
 	if !utf8.ValidString(subject) {
 		return Credential{}, errors.New("edhoc: subject is not valid UTF-8")
@@ -327,6 +334,17 @@ func NewCCS(subject string, kid []byte, pub crypto.PublicKey) (Credential, error
 
 // appendCOSEKey appends a COSE_Key with deterministically ordered labels.
 func appendCOSEKey(b, kid []byte, pub crypto.PublicKey) ([]byte, error) {
+	if k, ok := pub.(*mldsa44.PublicKey); ok {
+		b = cbor.AppendMap(b, 4)
+		b = cbor.AppendInt(b, keyKty)
+		b = cbor.AppendInt(b, ktyAKP)
+		b = cbor.AppendInt(b, keyKID)
+		b = cbor.AppendBytes(b, kid)
+		b = cbor.AppendInt(b, keyAlg)
+		b = cbor.AppendInt(b, algMLDSA44)
+		b = cbor.AppendInt(b, keyPub)
+		return cbor.AppendBytes(b, k.Bytes()), nil
+	}
 	if k, ok := pub.(*ecdsa.PublicKey); ok {
 		e, err := k.ECDH()
 		if err != nil {
@@ -377,8 +395,8 @@ func appendCOSEKey(b, kid []byte, pub crypto.PublicKey) ([]byte, error) {
 
 // parseCOSEKey returns the public key and kid of a COSE_Key.
 func parseCOSEKey(b []byte) (crypto.PublicKey, []byte, error) {
-	var kty, crv int64
-	var kid, x, y []byte
+	var kty, crv, alg int64
+	var kid, x, y, minus1 []byte
 	err := readMap(cbor.NewDecoder(b), func(label int64, d *cbor.Decoder) error {
 		var err error
 		switch label {
@@ -386,8 +404,10 @@ func parseCOSEKey(b []byte) (crypto.PublicKey, []byte, error) {
 			kty, err = d.Int()
 		case keyKID:
 			kid, err = d.Bytes()
+		case keyAlg:
+			alg, err = d.Int()
 		case keyCrv:
-			crv, err = d.Int()
+			minus1, err = d.Raw()
 		case keyX:
 			x, err = d.Bytes()
 		case keyY:
@@ -400,8 +420,24 @@ func parseCOSEKey(b []byte) (crypto.PublicKey, []byte, error) {
 	if err != nil {
 		return nil, nil, errCCS
 	}
+	// Label -1 is crv for EC2 and OKP keys and pub for AKP keys.
+	var akpPub []byte
+	if minus1 != nil {
+		if kty == ktyAKP {
+			akpPub, err = cbor.NewDecoder(minus1).Bytes()
+		} else {
+			crv, err = cbor.NewDecoder(minus1).Int()
+		}
+		if err != nil {
+			return nil, nil, errCCS
+		}
+	}
 	var pub crypto.PublicKey
 	switch {
+	case kty == ktyAKP && alg == algMLDSA44 && len(akpPub) == mldsa44.PublicKeySize:
+		k := new(mldsa44.PublicKey)
+		err = k.UnmarshalBinary(akpPub)
+		pub = k
 	case kty == ktyEC2 && crv == crvP256 && len(x) == 32 && len(y) == 32:
 		pub, err = ecdh.P256().NewPublicKey(append(append([]byte{4}, x...), y...))
 	case kty == ktyEC2 && crv == crvP384 && len(x) == 48 && len(y) == 48:

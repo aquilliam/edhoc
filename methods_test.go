@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/aquilliam/edhoc/internal/suites"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa44"
 )
 
 var allSuites = []Suite{Suite0, Suite1, Suite2, Suite3, Suite4, Suite5, Suite6, Suite24}
@@ -137,6 +138,12 @@ func party(t testing.TB, signs bool, suite Suite, kid byte) (any, Credential) {
 	var key any
 	var pub crypto.PublicKey
 	switch {
+	case signs && s.SigAlg == suites.AlgMLDSA44:
+		p, k, err := mldsa44.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, pub = k, p
 	case signs && s.SigAlg == suites.AlgEdDSA:
 		p, k, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
