@@ -68,7 +68,7 @@ func FuzzReadIDCred(f *testing.F) {
 func TestIDCredByValue(t *testing.T) {
 	a, b := []byte{0x30, 0x01}, []byte{0x30, 0x02}
 	for _, certs := range [][][]byte{{a}, {a, b}} {
-		id := X5Chain(certs...)
+		id := X5Chain(certs[0], certs[1:]...)
 		got, ok := id.X5Chain()
 		if !ok || len(got) != len(certs) || !bytes.Equal(got[0], a) {
 			t.Errorf("X5Chain round trip of %d certificates: %x, %v", len(certs), got, ok)

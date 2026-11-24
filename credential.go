@@ -68,20 +68,18 @@ func X5T(der []byte) IDCred {
 }
 
 // X5Chain returns the ID_CRED { 33 : x5chain } that carries an X.509
-// certificate chain by value (RFC 9360). certs are DER-encoded, starting with
-// the end-entity certificate. It panics if certs is empty.
-func X5Chain(certs ...[]byte) IDCred {
-	if len(certs) == 0 {
-		panic("edhoc: X5Chain needs at least one certificate")
-	}
+// certificate chain by value (RFC 9360): the DER-encoded end-entity
+// certificate cert, followed by any intermediates.
+func X5Chain(cert []byte, intermediates ...[]byte) IDCred {
 	b := cbor.AppendMap(nil, 1)
 	b = cbor.AppendInt(b, headerX5Chain)
-	if len(certs) == 1 {
-		b = cbor.AppendBytes(b, certs[0])
+	if len(intermediates) == 0 {
+		b = cbor.AppendBytes(b, cert)
 		return IDCred{raw: string(b)}
 	}
-	b = cbor.AppendArray(b, len(certs))
-	for _, c := range certs {
+	b = cbor.AppendArray(b, 1+len(intermediates))
+	b = cbor.AppendBytes(b, cert)
+	for _, c := range intermediates {
 		b = cbor.AppendBytes(b, c)
 	}
 	return IDCred{raw: string(b)}
