@@ -77,7 +77,7 @@ until it has received a message protected with them (RFC 9528, Section 5.4.2).
 
 ## Go versions
 
-Go 1.25 or later. CI tests 1.25 and the two latest releases.
+Go 1.26 or later. CI tests 1.26 and the latest release.
 
 ## Security
 
