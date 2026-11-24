@@ -214,7 +214,7 @@ func run(t *testing.T, argv []string, s session) {
 
 	var sess *edhoc.Session
 	if s.goInitiates {
-		i, err := edhoc.NewInitiator(cfg, []byte{0x05})
+		i, err := edhoc.NewInitiator(cfg, []byte{0x40})
 		if err != nil {
 			t.Fatal(err)
 		}
