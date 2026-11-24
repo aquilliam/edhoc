@@ -39,7 +39,7 @@ func (i *Initiator) ReadMessage4(msg []byte) ([]EAD, error) {
 	}
 	pt, err := h.encrypt0(false, h.prk4e3m, labelK4, labelIV4, h.th4, ct)
 	if err != nil {
-		return nil, i.fail(wrapf(err, "decrypting message_4"))
+		return nil, i.fail(authFailed("decrypting message_4", err))
 	}
 	ead, _, err := readEAD(cbor.NewDecoder(pt))
 	if err != nil {

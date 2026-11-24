@@ -57,14 +57,19 @@ type Error struct {
 	// Suites is SUITES_R, sent with ErrCodeWrongSelectedSuite.
 	Suites []Suite
 
-	err error
+	detail string
+	err    error
 }
 
 func (e *Error) Error() string {
-	if e.err != nil {
-		return "edhoc: " + e.Info + ": " + e.err.Error()
+	msg := e.Info
+	if e.detail != "" {
+		msg = e.detail
 	}
-	return "edhoc: " + e.Info
+	if e.err != nil {
+		return "edhoc: " + msg + ": " + e.err.Error()
+	}
+	return "edhoc: " + msg
 }
 
 func (e *Error) Unwrap() error { return e.err }
@@ -75,6 +80,12 @@ func failf(format string, args ...any) *Error {
 
 func wrapf(err error, format string, args ...any) *Error {
 	return &Error{Code: ErrCodeUnspecified, Info: fmt.Sprintf(format, args...), err: err}
+}
+
+// authFailed is a failed MAC, signature or decryption check. The peer is
+// told only that authentication failed; Error returns detail.
+func authFailed(detail string, err error) *Error {
+	return &Error{Code: ErrCodeUnspecified, Info: "authentication failed", detail: detail, err: err}
 }
 
 // A PeerError is an EDHOC error message received from the peer.

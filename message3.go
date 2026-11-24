@@ -96,7 +96,7 @@ func (r *Responder) readMessage3(ctx context.Context, msg []byte) ([]EAD, error)
 	}
 	pt, err := h.encrypt0(false, h.prk3e2m, labelK3, labelIV3, h.th3, ct)
 	if err != nil {
-		return nil, wrapf(err, "decrypting message_3")
+		return nil, authFailed("decrypting message_3", err)
 	}
 
 	d := cbor.NewDecoder(pt)
@@ -139,10 +139,10 @@ func (r *Responder) readMessage3(ctx context.Context, msg []byte) ([]EAD, error)
 	}
 	if signs {
 		if !h.suite.Verify(peerKey, toBeSigned(idCredI, h.th3, h.peer.Raw, eadRaw, mac3), sigOrMAC) {
-			return nil, failf("message_3 signature verification failed")
+			return nil, authFailed("message_3 signature verification failed", nil)
 		}
 	} else if !macEqual(sigOrMAC, mac3) {
-		return nil, failf("message_3 MAC verification failed")
+		return nil, authFailed("message_3 MAC verification failed", nil)
 	}
 	h.th4 = thNext(h.suite, h.th3, pt, h.peer.Raw)
 	r.session, err = h.finish(false)

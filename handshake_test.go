@@ -485,6 +485,24 @@ func TestTamperedMessages(t *testing.T) {
 	}
 }
 
+func TestAuthenticationFailureMessage(t *testing.T) {
+	i, r, _, _ := newPair(t)
+	msg1, _ := i.WriteMessage1()
+	r.ReadMessage1(t.Context(), msg1)
+	msg2, _ := r.WriteMessage2(pairCR)
+	i.ReadMessage2(t.Context(), msg2)
+	msg3, _ := i.WriteMessage3()
+	msg3[len(msg3)-1] ^= 1
+	_, err := r.ReadMessage3(t.Context(), msg3)
+	if err == nil || !strings.Contains(err.Error(), "decrypting message_3") {
+		t.Fatalf("ReadMessage3 error = %v", err)
+	}
+	want := cbor.AppendText(cbor.AppendInt(nil, 1), "authentication failed")
+	if got := ErrorMessage(err); !bytes.Equal(got, want) {
+		t.Errorf("ErrorMessage = %x, want %x", got, want)
+	}
+}
+
 // The invalid message_1 examples from RFC 9529, Section 4.
 func TestInvalidMessage1(t *testing.T) {
 	ts := newTrace2(t)

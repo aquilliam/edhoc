@@ -183,10 +183,10 @@ func (i *Initiator) readMessage2(ctx context.Context, msg []byte) ([]EAD, error)
 	}
 	if signs {
 		if !h.suite.Verify(peerKey, toBeSigned(idCredR, h.th2, h.peer.Raw, eadRaw, mac2), sigOrMAC) {
-			return nil, failf("message_2 signature verification failed")
+			return nil, authFailed("message_2 signature verification failed", nil)
 		}
 	} else if !macEqual(sigOrMAC, mac2) {
-		return nil, failf("message_2 MAC verification failed")
+		return nil, authFailed("message_2 MAC verification failed", nil)
 	}
 	h.th3 = thNext(h.suite, h.th2, pt, h.peer.Raw)
 	return accepted, nil
