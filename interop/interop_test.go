@@ -7,7 +7,7 @@
 // after a key update. A test is skipped unless its environment variable points
 // at the peer:
 //
-//	LAKERS_PYTHON    a Python with lakers-python installed
+//	LAKERS_PYTHON    a Python with lakers/requirements.txt installed
 //	UOSCORE_PEER     the binary built by uoscore/build.sh
 //	LIBEDHOC_PEER    the binary built by libedhoc/build.sh
 package interop
