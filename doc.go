@@ -18,7 +18,11 @@
 //
 // After message_3, both sides have a Session, from which application keys are
 // derived with Session.Exporter, or the parameters of an OSCORE context with
-// Session.OSCORE. Session.Close erases its keys.
+// Session.OSCORE. Session.Close erases its keys, and Initiator.Close and
+// Responder.Close erase the handshake's keys when message_4 is not used.
+// Erasing is best effort: the package overwrites the key buffers it holds,
+// but the Go runtime and the standard library's crypto packages may keep
+// copies it cannot reach, such as the ephemeral private key.
 //
 // # Credentials
 //

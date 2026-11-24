@@ -16,6 +16,7 @@ const (
 	initiatorWroteMessage3
 	initiatorReadMessage4
 	initiatorFailed
+	initiatorClosed
 )
 
 // An Initiator runs the Initiator side of one EDHOC session. Call
@@ -73,6 +74,17 @@ func (i *Initiator) fail(err error) error {
 	i.state = initiatorFailed
 	i.h.erase()
 	return err
+}
+
+// Close erases the handshake's keying material and ends the handshake. Every
+// later call fails, except Session, which still returns a session completed
+// before Close. An application that does not use message_4 calls Close once
+// it has the session; Close has no effect on the Session.
+func (i *Initiator) Close() {
+	i.h.erase()
+	if i.state != initiatorFailed {
+		i.state = initiatorClosed
+	}
 }
 
 // Session returns the session once WriteMessage3 has succeeded.

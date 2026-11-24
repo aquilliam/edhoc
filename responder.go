@@ -9,6 +9,7 @@ const (
 	responderReadMessage3
 	responderWroteMessage4
 	responderFailed
+	responderClosed
 )
 
 // A Responder runs the Responder side of one EDHOC session. Call
@@ -44,6 +45,17 @@ func (r *Responder) fail(err error) error {
 	r.state = responderFailed
 	r.h.erase()
 	return err
+}
+
+// Close erases the handshake's keying material and ends the handshake. Every
+// later call fails, except Session, which still returns a session completed
+// before Close. An application that does not use message_4 calls Close once
+// it has the session; Close has no effect on the Session.
+func (r *Responder) Close() {
+	r.h.erase()
+	if r.state != responderFailed {
+		r.state = responderClosed
+	}
 }
 
 // Session returns the session once ReadMessage3 has succeeded.

@@ -744,6 +744,51 @@ func TestKeysErased(t *testing.T) {
 	}
 }
 
+func TestHandshakeClose(t *testing.T) {
+	i, r, _, _ := newPair(t)
+	msg1, _ := i.WriteMessage1()
+	r.ReadMessage1(t.Context(), msg1)
+	msg2, _ := r.WriteMessage2(pairCR)
+	i.ReadMessage2(t.Context(), msg2)
+	msg3, _ := i.WriteMessage3()
+	if _, err := r.ReadMessage3(t.Context(), msg3); err != nil {
+		t.Fatal(err)
+	}
+	i.Close()
+	r.Close()
+	if i.h.prk4e3m != nil || r.h.prk4e3m != nil {
+		t.Fatal("PRK_4e3m kept after Close")
+	}
+	if _, err := r.WriteMessage4(); !errors.Is(err, ErrWrongState) {
+		t.Errorf("WriteMessage4 after Close: %v", err)
+	}
+	if _, err := i.ReadMessage4(nil); !errors.Is(err, ErrWrongState) {
+		t.Errorf("ReadMessage4 after Close: %v", err)
+	}
+	si, err := i.Session()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sr, err := r.Session()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := si.Exporter(0, nil, 16)
+	b, _ := sr.Exporter(0, nil, 16)
+	if a == nil || !bytes.Equal(a, b) {
+		t.Error("sessions differ after Close")
+	}
+
+	i, _, _, _ = newPair(t)
+	i.Close()
+	if _, err := i.WriteMessage1(); !errors.Is(err, ErrWrongState) {
+		t.Errorf("WriteMessage1 after Close: %v", err)
+	}
+	if _, err := i.Session(); !errors.Is(err, ErrWrongState) {
+		t.Errorf("Session after Close before message_3: %v", err)
+	}
+}
+
 func TestSessionClose(t *testing.T) {
 	i, r, _, _ := newPair(t)
 	if err := run(t, i, r, nil, nil, nil, nil); err != nil {
