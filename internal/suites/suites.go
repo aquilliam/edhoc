@@ -10,8 +10,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
+	"crypto/hkdf"
 	"crypto/rand"
 	_ "crypto/sha256"
+	"crypto/sha3"
 	_ "crypto/sha512"
 	"encoding/asn1"
 	"errors"
@@ -20,6 +22,9 @@ import (
 	"math/big"
 
 	"github.com/aquilliam/edhoc/internal/ccm"
+	"github.com/cloudflare/circl/kem"
+	"github.com/cloudflare/circl/kem/mlkem/mlkem512"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa44"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -35,6 +40,7 @@ const (
 	AlgES256            = -7
 	AlgES384            = -35
 	AlgEdDSA            = -8
+	AlgMLDSA44          = -48
 )
 
 var errInvalidPoint = errors.New("suites: invalid public key")
@@ -49,8 +55,10 @@ type Suite struct {
 	TagSize   int
 	newAEAD   func(key []byte) (cipher.AEAD, error)
 
-	// EDHOC hash algorithm.
-	Hash crypto.Hash
+	// EDHOC hash algorithm: Hash for SHA-2, or SHAKE256 with a 512-bit
+	// output if shake256 is set.
+	Hash     crypto.Hash
+	shake256 bool
 
 	// EDHOC MAC length in bytes, used with static DH authentication.
 	MACLength int
@@ -60,6 +68,9 @@ type Suite struct {
 	// compact form.
 	Curve      ecdh.Curve
 	compressed elliptic.Curve
+
+	// KEM, if set, is the EDHOC key exchange algorithm instead of Curve.
+	KEM kem.Scheme
 
 	// EDHOC signature algorithm.
 	SigAlg int
@@ -195,6 +206,23 @@ var suite5 = &Suite{
 	AppKeySize: chacha20poly1305.KeySize,
 }
 
+// suiteMinus24 is cipher suite TBD1 of draft-ietf-lake-pqsuites-02 under the
+// private use label -24.
+var suiteMinus24 = &Suite{
+	ID:         -24,
+	KeySize:    16,
+	NonceSize:  13,
+	TagSize:    16,
+	newAEAD:    newAESCCM(16),
+	shake256:   true,
+	MACLength:  16,
+	KEM:        mlkem512.Scheme(),
+	SigAlg:     AlgMLDSA44,
+	AppAEAD:    AlgAESCCM16_64_128,
+	AppHash:    AlgSHA256,
+	AppKeySize: 16,
+}
+
 // ByID returns the cipher suite with the given label, or false if it is not
 // supported.
 func ByID(id int) (*Suite, bool) {
@@ -215,6 +243,8 @@ func ByID(id int) (*Suite, bool) {
 		return suite6, true
 	case 24:
 		return suite24, true
+	case -24:
+		return suiteMinus24, true
 	}
 	return nil, false
 }
@@ -264,11 +294,61 @@ func (s *Suite) AppNonceSize() int {
 
 // HashLength returns the output length of the EDHOC hash algorithm.
 func (s *Suite) HashLength() int {
+	if s.shake256 {
+		return 64
+	}
 	return s.Hash.Size()
 }
 
-// PublicKeySize returns the length of a public key in compact representation.
+// Sum returns the EDHOC hash of the concatenation of data.
+func (s *Suite) Sum(data ...[]byte) []byte {
+	if s.shake256 {
+		h := sha3.NewSHAKE256()
+		for _, d := range data {
+			h.Write(d)
+		}
+		out := make([]byte, 64)
+		h.Read(out)
+		return out
+	}
+	h := s.Hash.New()
+	for _, d := range data {
+		h.Write(d)
+	}
+	return h.Sum(nil)
+}
+
+// Extract is EDHOC_Extract (RFC 9528, Section 4.1.1).
+func (s *Suite) Extract(salt, ikm []byte) ([]byte, error) {
+	if s.shake256 {
+		return kmac256(salt, ikm, 64), nil
+	}
+	return hkdf.Extract(s.Hash.New, ikm, salt)
+}
+
+// Expand is EDHOC_Expand (RFC 9528, Section 4.1.2).
+func (s *Suite) Expand(prk, info []byte, length int) ([]byte, error) {
+	if s.shake256 {
+		return kmac256(prk, info, length), nil
+	}
+	return hkdf.Expand(s.Hash.New, prk, string(info), length)
+}
+
+// GYSize returns the length of G_Y: a public key in compact representation,
+// or a KEM ciphertext.
+func (s *Suite) GYSize() int {
+	if s.KEM != nil {
+		return s.KEM.CiphertextSize()
+	}
+	return s.PublicKeySize()
+}
+
+// PublicKeySize returns the length of a public key in compact representation,
+// or of a KEM encapsulation key.
 func (s *Suite) PublicKeySize() int {
+	if s.KEM != nil {
+		return s.KEM.PublicKeySize()
+	}
 	if s.compressed == nil {
 		return 32
 	}
@@ -316,6 +396,12 @@ func (s *Suite) ParsePublicKey(x []byte) (*ecdh.PublicKey, error) {
 // Sign signs msg with key using the EDHOC signature algorithm and returns the
 // signature as COSE encodes it.
 func (s *Suite) Sign(key crypto.Signer, msg []byte) ([]byte, error) {
+	if s.SigAlg == AlgMLDSA44 {
+		if _, ok := key.Public().(*mldsa44.PublicKey); !ok {
+			return nil, errors.New("suites: ML-DSA-44 needs an ML-DSA-44 key")
+		}
+		return key.Sign(rand.Reader, msg, crypto.Hash(0))
+	}
 	if s.SigAlg == AlgEdDSA {
 		if _, ok := key.Public().(ed25519.PublicKey); !ok {
 			return nil, errors.New("suites: EdDSA needs an Ed25519 key")
@@ -350,9 +436,13 @@ func (s *Suite) Sign(key crypto.Signer, msg []byte) ([]byte, error) {
 }
 
 // Verify reports whether sig is a valid signature of msg by pub, which must be
-// an ed25519.PublicKey for EdDSA and an *ecdsa.PublicKey on the right curve
-// for ECDSA.
+// an ed25519.PublicKey for EdDSA, an *ecdsa.PublicKey on the right curve for
+// ECDSA and an *mldsa44.PublicKey for ML-DSA-44.
 func (s *Suite) Verify(pub crypto.PublicKey, msg, sig []byte) bool {
+	if s.SigAlg == AlgMLDSA44 {
+		k, ok := pub.(*mldsa44.PublicKey)
+		return ok && mldsa44.Verify(k, msg, nil, sig)
+	}
 	if s.SigAlg == AlgEdDSA {
 		k, ok := pub.(ed25519.PublicKey)
 		return ok && len(k) == ed25519.PublicKeySize && ed25519.Verify(k, msg, sig)
@@ -374,7 +464,7 @@ func (s *Suite) Verify(pub crypto.PublicKey, msg, sig []byte) bool {
 }
 
 // SignatureCurve returns the curve of the suite's ECDSA signature algorithm,
-// or nil for EdDSA.
+// or nil for EdDSA and ML-DSA.
 func (s *Suite) SignatureCurve() elliptic.Curve {
 	return ecdsaAlgs[s.SigAlg].curve
 }

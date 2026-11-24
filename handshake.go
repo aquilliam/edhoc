@@ -10,6 +10,7 @@ import (
 
 	"github.com/aquilliam/edhoc/internal/cbor"
 	"github.com/aquilliam/edhoc/internal/suites"
+	"github.com/cloudflare/circl/kem"
 )
 
 // handshake is the protocol state shared by the Initiator and the Responder.
@@ -19,6 +20,11 @@ type handshake struct {
 
 	eph     *ecdh.PrivateKey // X or Y
 	peerEph *ecdh.PublicKey  // G_Y or G_X
+
+	// For a KEM suite, the Initiator's decapsulation key and the
+	// encapsulation key in G_X.
+	kemKey  kem.PrivateKey
+	kemPeer kem.PublicKey
 	cI, cR  []byte
 
 	message1 []byte
@@ -38,7 +44,7 @@ func (h *handshake) erase() {
 	for _, k := range [][]byte{h.prk2e, h.prk3e2m, h.prk4e3m} {
 		clear(k)
 	}
-	h.eph, h.prk2e, h.prk3e2m, h.prk4e3m = nil, nil, nil, nil
+	h.eph, h.kemKey, h.prk2e, h.prk3e2m, h.prk4e3m = nil, nil, nil, nil, nil
 }
 
 // eraseBeforeMessage4 drops the keying material that message_4 does not need.
@@ -50,7 +56,7 @@ func (h *handshake) eraseBeforeMessage4() {
 		}
 		clear(k)
 	}
-	h.eph, h.prk2e, h.prk3e2m = nil, nil, nil
+	h.eph, h.kemKey, h.prk2e, h.prk3e2m = nil, nil, nil, nil
 }
 
 // ephemeral returns this side's ephemeral key, generating it on first use.
@@ -63,6 +69,74 @@ func (h *handshake) ephemeral() (*ecdh.PrivateKey, error) {
 		h.eph = k
 	}
 	return h.eph, nil
+}
+
+// writeGX returns G_X: the compact ephemeral public key, or a fresh
+// encapsulation key for a KEM suite (draft-ietf-lake-pqsuites, Section 3).
+func (h *handshake) writeGX() ([]byte, error) {
+	if h.suite.KEM != nil {
+		pk, sk, err := h.suite.KEM.GenerateKeyPair()
+		if err != nil {
+			return nil, err
+		}
+		h.kemKey = sk
+		return pk.MarshalBinary()
+	}
+	x, err := h.ephemeral()
+	if err != nil {
+		return nil, err
+	}
+	return h.suite.CompactPublicKey(x.PublicKey()), nil
+}
+
+// readGX parses G_X from message_1.
+func (h *handshake) readGX(gX []byte) error {
+	var err error
+	if h.suite.KEM != nil {
+		h.kemPeer, err = h.suite.KEM.UnmarshalBinaryPublicKey(gX)
+	} else {
+		h.peerEph, err = h.suite.ParsePublicKey(gX)
+	}
+	return err
+}
+
+// writeGY returns G_Y and G_XY: the compact ephemeral public key and the ECDH
+// shared secret, or the ciphertext and shared secret of an encapsulation to
+// G_X for a KEM suite.
+func (h *handshake) writeGY() (gY, gXY []byte, err error) {
+	if h.suite.KEM != nil {
+		return h.suite.KEM.Encapsulate(h.kemPeer)
+	}
+	y, err := h.ephemeral()
+	if err != nil {
+		return nil, nil, err
+	}
+	gXY, err = y.ECDH(h.peerEph)
+	if err != nil {
+		return nil, nil, wrapf(err, "computing G_XY")
+	}
+	return h.suite.CompactPublicKey(y.PublicKey()), gXY, nil
+}
+
+// readGY parses G_Y from message_2 and returns G_XY.
+func (h *handshake) readGY(gY []byte) ([]byte, error) {
+	if h.suite.KEM != nil {
+		gXY, err := h.suite.KEM.Decapsulate(h.kemKey, gY)
+		if err != nil {
+			return nil, wrapf(err, "invalid G_Y")
+		}
+		return gXY, nil
+	}
+	var err error
+	h.peerEph, err = h.suite.ParsePublicKey(gY)
+	if err != nil {
+		return nil, wrapf(err, "invalid G_Y")
+	}
+	gXY, err := h.eph.ECDH(h.peerEph)
+	if err != nil {
+		return nil, wrapf(err, "computing G_XY")
+	}
+	return gXY, nil
 }
 
 // staticKey returns this side's static DH key. Config.check has made sure it
@@ -112,12 +186,9 @@ func (h *handshake) lookupPeer(ctx context.Context, id IDCred, ead []EAD, ownCon
 
 // derivePRK2e computes TH_2 and PRK_2e (RFC 9528, Sections 4.1.1.1 and
 // 5.3.2).
-func (h *handshake) derivePRK2e(gY []byte) error {
+func (h *handshake) derivePRK2e(gY, gXY []byte) error {
 	h.th2 = th2(h.suite, gY, h.message1)
-	gXY, err := h.eph.ECDH(h.peerEph)
-	if err != nil {
-		return wrapf(err, "computing G_XY")
-	}
+	var err error
 	h.prk2e, err = extract(h.suite, h.th2, gXY)
 	return err
 }
