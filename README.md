@@ -17,7 +17,7 @@ Ed448, neither of which Go has. Both RFC 9529 traces are reproduced exactly, and
 handshakes work in both roles with [lakers](https://github.com/lake-rs/lakers)
 0.6.2, [uoscore-uedhoc](https://github.com/eriptic/uoscore-uedhoc) 3.2.0 and
 [libedhoc](https://github.com/kamil-kielbasa/libedhoc) 2.3.3 (see
-[interop](interop)). The API may change before v1.0.
+[interop](interop)).
 
 Supported:
 

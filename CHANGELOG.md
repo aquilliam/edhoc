@@ -1,8 +1,30 @@
 # Changelog
 
 All notable changes to this project are listed here. Versions follow
-[semantic versioning](https://semver.org/). Until v1.0.0, minor versions may
-include breaking changes.
+[semantic versioning](https://semver.org/).
+
+## v1.0.0 (2026-11-24)
+
+The API is now stable.
+
+Breaking changes:
+
+- Go 1.26 or later is required, and `golang.org/x/crypto` is updated to
+  v0.59.0.
+- `X5Chain` takes the end-entity certificate as its first argument,
+  `X5Chain(cert, intermediates...)`, instead of panicking when given no
+  certificates.
+- When a MAC, signature or decryption check fails, the error message sent to
+  the peer says only "authentication failed". The error returned to the
+  application still says which check failed.
+
+Other changes:
+
+- `Initiator.Close` and `Responder.Close` erase the handshake's keys, for
+  applications that do not use message_4. `Session` still returns a session
+  completed before `Close`.
+- The package documentation says that erasing keys is best effort.
+- The interop tests with lakers, uoscore-uedhoc and libedhoc run in CI.
 
 ## v0.2.1 (2026-11-02)
 

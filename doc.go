@@ -43,5 +43,5 @@
 // The package implements all four authentication methods with cipher suites
 // 0 to 6 and 24. Credentials can be raw public keys in a CWT Claims Set (NewCCS,
 // ParseCCS) or X.509 certificates (NewX509); any other form can be used by
-// filling in a Credential directly. The API may change before v1.0.
+// filling in a Credential directly.
 package edhoc
