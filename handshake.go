@@ -32,8 +32,8 @@ type handshake struct {
 	peer Credential
 }
 
-// erase drops all keying material, once the session has failed or message_4
-// has been sent or received.
+// erase drops all keying material, once the session has failed, message_4
+// has been sent or received, or Close has been called.
 func (h *handshake) erase() {
 	for _, k := range [][]byte{h.prk2e, h.prk3e2m, h.prk4e3m} {
 		clear(k)

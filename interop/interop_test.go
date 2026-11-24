@@ -80,7 +80,7 @@ var both = []string{"reference", "value"}
 func TestLakers(t *testing.T) {
 	python := os.Getenv("LAKERS_PYTHON")
 	if python == "" {
-		t.Skip("set LAKERS_PYTHON to a Python with lakers-python installed")
+		t.Skip("set LAKERS_PYTHON to a Python with lakers/requirements.txt installed")
 	}
 	for _, s := range sessions(both, both) {
 		t.Run(s.name(), func(t *testing.T) {
