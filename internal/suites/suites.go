@@ -19,7 +19,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/aquilliam/edhoc/internal/ccm"
+	"github.com/pion/dtls/v3/pkg/crypto/ccm"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -225,7 +225,7 @@ func newAESCCM(tagSize int) func([]byte) (cipher.AEAD, error) {
 		if err != nil {
 			return nil, err
 		}
-		return ccm.New(b, tagSize, 13)
+		return ccm.NewCCM(b, tagSize, 13)
 	}
 }
 

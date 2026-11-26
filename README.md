@@ -31,7 +31,8 @@ Supported:
 - A Responder `Config` chosen per session with `Config.GetConfig`
 
 The code is pure Go with no cgo or `unsafe`, and depends only on the standard
-library and `golang.org/x/crypto`. Names and comments follow RFC 9528 so the two
+library, `golang.org/x/crypto` and the AES-CCM package of
+`github.com/pion/dtls/v3`. Names and comments follow RFC 9528 so the two
 can be read side by side.
 
 ## Example

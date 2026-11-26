@@ -21,8 +21,8 @@
 // Session.OSCORE. Session.Close erases its keys, and Initiator.Close and
 // Responder.Close erase the handshake's keys when message_4 is not used.
 // Erasing is best effort: the package overwrites the key buffers it holds,
-// but the Go runtime and the standard library's crypto packages may keep
-// copies it cannot reach, such as the ephemeral private key.
+// but the Go runtime, the standard library's crypto packages and the AES-CCM
+// package may keep copies it cannot reach, such as the ephemeral private key.
 //
 // # Credentials
 //
